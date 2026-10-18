@@ -28,7 +28,7 @@ Referencia principal: **Acuña et al. (2021)**, *Operational Planning of Energy 
 
 Se **preserva el problema** de decidir qué cargas encender, cómo utilizar paneles y baterías y cómo responder a irradiancia incierta. Se **adapta el método** al añadir Chronos-2 y un MPC heurístico compartido. No se afirmará que A reproduce literalmente todos los resultados del artículo: los datos, el emplazamiento, las baterías, la parametrización beta y el criterio de selección difieren. El artículo presenta MPC como posible extensión, no como el controlador de sus experimentos.
 
-Las expresiones impresas (4) y (9) del artículo presentan ambigüedades frente a su explicación física: se implementarán límites consistentes de descarga y un indicador binario de solicitud, documentando el cambio. **Nunca** se relajan límites para hacer que una alternativa produzca mejores resultados.
+La formulación física de este documento **corrige inconsistencias impresas** y explicita supuestos; no es una transcripción literal de las ecuaciones del artículo. La correspondencia se detalla en §4.5. **Nunca** se relajan límites para hacer que una alternativa produzca mejores resultados.
 
 ## 3. Datos existentes: T01 completada
 
@@ -59,7 +59,7 @@ P_t^{\mathrm{FV}}=\min\!\left(P_{\mathrm{inv,max}},\;P_{\mathrm{STC}}\,\frac{G_t
 \qquad E_t^{\mathrm{FV}}=P_t^{\mathrm{FV}}\Delta t.
 \]
 
-\(f\) representa pérdidas agregadas del sistema FV sin duplicar pérdidas de batería. Aproximar irradiancia sobre paneles con GHI implica un **supuesto de plano horizontal equivalente**, idéntico para A y B. El inversor y la potencia del bus deben limitar las cargas conforme a la configuración.
+\(f\) representa pérdidas agregadas del sistema FV sin duplicar pérdidas de batería. Aproximar irradiancia sobre paneles con GHI implica un **supuesto de plano horizontal equivalente**, idéntico para A y B. No se recorta GHI a 1000 W/m²: es la referencia STC, no un máximo. El recorte de generación FV por el inversor y el límite de potencia nominal de las cargas son comprobaciones distintas.
 
 ### 4.2. Cargas y función objetivo
 
@@ -73,9 +73,17 @@ P_t^{\mathrm{FV}}=\min\!\left(P_{\mathrm{inv,max}},\;P_{\mathrm{STC}}\,\frac{G_t
 
 \(p_{k,t}\) es la prioridad. Si el denominador es cero, se informa «no aplica». Se registra por separado energía **solicitada**, **comprometida** y **atendida**. La métrica principal usa atención realmente ejecutada, no promesas del plan.
 
+Se supone un **inversor común** para el suministro FV y desde baterías. Con \(P_k\) como potencia nominal del dispositivo, se exige además:
+
+\[
+\sum_k P_k z_{k,t}\le\min(P_{\mathrm{inv,max}},P_{\mathrm{bus,max}}).
+\]
+
+Esta restricción usa potencias nominales; no se sustituye por la energía horaria dividida entre \(\Delta t\), pues el tiempo programado de uso puede ser menor que una hora. La topología y este límite son supuestos del proyecto, no un modelo eléctrico dentro del intervalo.
+
 ### 4.3. Conservación de energía y baterías individuales
 
-\(c_{b,t}\) es energía del bus enviada a cargar la batería, \(d_{b,t}\) la entregada desde ella al bus y \(v_t\) el vertido (todas no negativas). \(C_{b,t}\) es energía almacenada al comenzar la hora:
+\(c_{b,t}\) es energía del bus enviada a cargar la batería, \(d_{b,t}\) la entregada desde ella al bus y \(v_t\) el vertido (todas no negativas). Las eficiencias individuales \(0<\eta_{c,b},\eta_{d,b}\le1\) convierten esos flujos del bus a cambios de energía almacenada; no se vuelven a aplicar a la energía FV. \(C_{b,t}\) es energía almacenada **al comenzar la hora**:
 
 \[
 \sum_k D_{k,t}z_{k,t}+\sum_b c_{b,t}+v_t
@@ -84,21 +92,38 @@ P_t^{\mathrm{FV}}=\min\!\left(P_{\mathrm{inv,max}},\;P_{\mathrm{STC}}\,\frac{G_t
 \]
 
 \[
-C_{b,\min}\le C_{b,t}\le C_{b,\max},\qquad
+C_{b,\min}\le C_{b,t},C_{b,t+1}\le C_{b,\max},\qquad
 0\le c_{b,t}\le\min\!\left(P_{c,b,\max}\Delta t,\frac{C_{b,\max}-C_{b,t}}{\eta_{c,b}}\right),
 \]
 
 \[
-0\le d_{b,t}\le\min\!\left(P_{d,b,\max}\Delta t,\eta_{d,b}(C_{b,t}-C_{b,\min})\right).
+0\le d_{b,t}\le\min\!\left(P_{d,b,\max}\Delta t,\eta_{d,b}(C_{b,t}-C_{b,\min})\right),\qquad c_{b,t}d_{b,t}=0.
 \]
 
-No se carga y descarga simultáneamente una batería; la carga usa excedente solar y la descarga cubre déficit. **Cada batería conserva su propio estado, potencia y límites**: agregarlas en una batería virtual podría ocultar descargas inviables. Se verifica también la potencia máxima de suministro a las cargas. Si la energía es insuficiente, se **desatienden cargas** antes que violar restricciones. Los estados finales de un horizonte son los iniciales del siguiente.
+Los límites de ambos flujos se calculan con el estado previo \(C_{b,t}\). La carga usa excedente solar y la descarga cubre déficit. **Cada batería conserva su propio estado, potencia y límites**: agregarlas en una batería virtual podría ocultar descargas inviables. Las eficiencias, los límites de potencia y el reparto por identificador son extensiones explícitas del proyecto. Si la energía es insuficiente, se **desatienden cargas** antes que violar restricciones. Los estados finales de un horizonte son los iniciales del siguiente; los valores configurados solo inicializan la primera llamada que no recibe estado.
 
 ### 4.4. Heurística del artículo, interpretada y verificable
 
-En cada hora: calcular energía fotovoltaica disponible; ordenar cargas solicitadas por prioridad descendente, consumo descendente e identificador; atender completamente una carga solo si los flujos son factibles; descargar baterías en orden determinista sin traspasar sus límites; cargar excedentes y contabilizar vertido. La decisión on/off, el despacho y el balance usan **la misma rutina** en A y B.
+En cada hora, calcular la energía FV y sumar los límites de descarga individuales para conocer el presupuesto energético. Ordenar las solicitudes activas por prioridad descendente, energía demandada descendente e identificador ascendente. Aceptar una carga completa si cabe en la energía y potencia nominal restantes; si se rechaza, continuar con la siguiente. Seleccionar primero todas las cargas y ejecutar **un único despacho sobre la selección final**: FV para las cargas, descarga para el déficit, carga con excedente solar y vertido del resto. Recorrer baterías por identificador ascendente. Una carga rechazada no consume batería.
 
-El orden y los desempates concretan ambigüedades del algoritmo publicado; son una interpretación documentada, no una transcripción literal. Se comprueban casos manuales de noche, excedente, batería al mínimo, batería llena y déficit.
+Sin calendario externo se fija \(x=z\). Con compromisos fijos solo son candidatas las cargas con \(x=1\): ante un déficit se conserva el compromiso y puede resultar \(z=0\), sin activar cargas fuera del calendario. La decisión on/off, el despacho y el balance usan **la misma rutina** en A y B; la heurística no garantiza el óptimo global de \(J\).
+
+No se redondean flujos ni estados intermedios. Se verifican balances y límites con tolerancia absoluta de \(10^{-6}\) Wh, sin añadir esa tolerancia a los presupuestos de selección. Los casos manuales incluyen noche, excedente, batería al mínimo, batería llena, déficit y baterías heterogéneas.
+
+### 4.5. Correspondencia con el artículo y diferencias
+
+Se consultaron §2.2 (pp. 5–6) y los algoritmos 1–2 (p. 8) del [PDF oficial](https://mdpi-res.com/d_attachment/energies/energies-14-02789/article_deploy/energies-14-02789.pdf). Los índices día/periodo del artículo se reúnen en la secuencia horaria \(t\).
+
+| Referencia | Interpretación física adoptada en T03 |
+|---|---|
+| (1)–(3), (7) | Límites individuales explícitos y descarga limitada por energía útil, sin variable auxiliar \(Q\) ni big-M. Con \(c_{\min}>0\) y \(Q\) binaria, (1)–(2) imprimen \(Q\le C/c_{\min}\le Q+1\), imponiendo inadvertidamente \(C\le2c_{\min}\); no se incorpora esa cota ajena a la capacidad configurada. |
+| (4) | Para \(E=Q=1\), la desigualdad impresa exige \(BD\ge C-c_{\min}\), frente al máximo descrito en el texto. Además, (5) define \(C\) después del flujo del mismo periodo. Se limita la descarga con el estado **anterior**, \(d\le\eta_d(C_t-C_{\min})\). |
+| (5)–(6) | Continuidad por batería y conservación en el bus. Se añaden eficiencias individuales y vertido explícito; no se crea energía ni se descuenta una carga rechazada. |
+| (8)–(9) | Servicio completo y solicitudes binarias: \(z\le x\le r\). La (9) impresa compara una decisión binaria con demanda en Wh; se usa el indicador \(r\), conservando la energía en el balance. |
+| (10) | Beneficio ponderado de las cargas efectivamente atendidas. La selección voraz busca ese criterio sin certificar un máximo global. |
+| Algoritmos 1–2 | El primero despacha usando un orden por consumo y el segundo selecciona según prioridad. Para evitar descontar energía de una selección provisional distinta, T03 selecciona primero y despacha una sola vez. Prioridad, consumo, desempate por identificador y reparto por batería quedan fijados explícitamente. |
+
+La conversión FV, el paso horario, las eficiencias, los límites de potencia y la topología común son supuestos físicos del caso semisintético. Estas decisiones concretan una adaptación consistente; no validan numéricamente el caso original de Volcanes ni el comportamiento eléctrico dentro de una hora.
 
 ## 5. Pronósticos y escenarios: única diferencia A/B
 
