@@ -105,7 +105,7 @@ def test_rechaza_ventana_invalida(config_solar, inicio, fin):
 def test_guarda_nueva_adquisicion_y_hashes(tmp_path, monkeypatch, config_solar):
     ruta_config = tmp_path / "config.json"
     ruta_config.write_text(json.dumps(config_solar), encoding="utf-8")
-    monkeypatch.setattr("energy_project.configuracion.cargar_configuracion", lambda ruta: config_solar)
+    monkeypatch.setattr("energy_project.descarga.cargar_configuracion", lambda ruta: config_solar)
     cruda = json.dumps(respuesta_solar("2025-01-07", "2025-01-08")).encode()
     monkeypatch.setattr("energy_project.descarga.urlopen", lambda *args, **kwargs: io.BytesIO(cruda))
     salida = tmp_path / "nueva"
@@ -127,7 +127,7 @@ def test_guarda_nueva_adquisicion_y_hashes(tmp_path, monkeypatch, config_solar):
 def test_error_de_red_no_produce_csv(tmp_path, monkeypatch, config_solar):
     ruta_config = tmp_path / "config.json"
     ruta_config.write_text(json.dumps(config_solar), encoding="utf-8")
-    monkeypatch.setattr("energy_project.configuracion.cargar_configuracion", lambda ruta: config_solar)
+    monkeypatch.setattr("energy_project.descarga.cargar_configuracion", lambda ruta: config_solar)
     def fallar(*args, **kwargs):
         raise URLError("sin conexión")
     monkeypatch.setattr("energy_project.descarga.urlopen", fallar)

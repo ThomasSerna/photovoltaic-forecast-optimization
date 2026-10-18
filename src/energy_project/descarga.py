@@ -12,10 +12,11 @@ from urllib.request import urlopen
 
 import pandas as pd
 
+from .configuracion import PERIODOS, cargar_configuracion
+
 
 ENDPOINT = "https://archive-api.open-meteo.com/v1/archive"
 DOCUMENTACION = "https://open-meteo.com/en/docs/historical-weather-api"
-PERIODOS = ("historial_previo", "desarrollo", "evaluacion", "reserva_no_usada")
 
 
 def _limite(valor, zona):
@@ -142,8 +143,6 @@ def descargar_irradiancia(ruta_config, salida=None, inicio=None, fin=None):
 
     Ante una respuesta inválida conserva consulta y respuesta para diagnosticar.
     """
-    from .configuracion import cargar_configuracion
-
     ruta_config = Path(ruta_config).resolve()
     config = cargar_configuracion(ruta_config)
     inicio, fin = _ventana(config, inicio, fin)

@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from energy_project.configuracion import validar_demanda
 from energy_project.demanda import (
     generar_archivos,
     generar_calendario,
     generar_demanda,
-    validar_configuracion,
 )
 
 
@@ -79,7 +79,7 @@ def test_rechaza_configuracion_de_demanda_invalida(campo, valor):
     config = configuracion()
     config[campo] = valor
     with pytest.raises(ValueError, match=campo):
-        validar_configuracion(config)
+        validar_demanda(config)
 
 
 @pytest.mark.parametrize(('campo', 'valor'), [
@@ -92,18 +92,18 @@ def test_rechaza_parametros_de_carga_invalidos(campo, valor):
     config = configuracion()
     config['cargas'][1][campo] = valor
     with pytest.raises(ValueError, match='cargas'):
-        validar_configuracion(config)
+        validar_demanda(config)
 
 
 def test_rechaza_lecturas_y_periodos_inconsistentes():
     config = configuracion()
     config['lecturas'][2]['entero_kwh'] = config['lecturas'][1]['entero_kwh']
     with pytest.raises(ValueError, match='lecturas'):
-        validar_configuracion(config)
+        validar_demanda(config)
     config = configuracion()
     config['periodos']['desarrollo']['fin'] = '2025-03-02T00:00:00-05:00'
     with pytest.raises(ValueError, match='periodos'):
-        validar_configuracion(config)
+        validar_demanda(config)
 
 
 def test_rechaza_demanda_incompatible_sin_recortarla():

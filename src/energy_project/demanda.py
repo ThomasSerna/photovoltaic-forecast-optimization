@@ -29,128 +29,12 @@ import random
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from statistics import mean
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
-# Supuestos fijos del código; validar_configuracion exige que configuracion.json coincida.
-RESOLUCION_H = 1
-CLASES_INICIO_H = 7
-CLASES_FIN_H = 12.5
-DIAS_LECTIVOS = [0, 1, 2, 3, 4]  # índices de DIAS_SEMANA: lunes a viernes
-
-DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
-HORAS_CON_CLASE = range(7, 13)  # horas locales que se cruzan con las clases de 07:00 a 12:30
-ID_NEVERA = 'nevera_01'  # única carga permanente a la que se asigna energía
-
-
-def validar_configuracion(config):
-    """Comprueba que la configuración respeta los supuestos fijos del código."""
-    try:
-        _validar_configuracion(config)
-    except (KeyError, TypeError, ZoneInfoNotFoundError) as error:
-        raise ValueError(f'configuracion: campo faltante o inválido: {error}') from error
-
-
-def numero_finito(valor, campo, minimo=0, estricto=True):
-    """Rechaza valores no numéricos, infinitos y fuera del dominio declarado."""
-    if (isinstance(valor, bool) or not isinstance(valor, (int, float))
-            or not math.isfinite(valor) or (valor <= minimo if estricto else valor < minimo)):
-        comparacion = 'mayor que' if estricto else 'mayor o igual que'
-        raise ValueError(f'configuracion: {campo} debe ser finito y {comparacion} {minimo}; recibido {valor!r}')
-
-
-def _validar_configuracion(config):
-    if config['resolucion_h'] != RESOLUCION_H or isinstance(config['resolucion_h'], bool):
-        raise ValueError('configuracion: resolucion_h: solo se admite resolución horaria (1 h)')
-    if config['clases_inicio_h'] != CLASES_INICIO_H or config['clases_fin_h'] != CLASES_FIN_H:
-        raise ValueError('configuracion: clases_inicio_h/clases_fin_h: solo se admiten clases de 07:00 a 12:30')
-    if (config['dias_lectivos'] != DIAS_LECTIVOS
-            or any(type(dia) is not int for dia in config['dias_lectivos'])):
-        raise ValueError('configuracion: dias_lectivos: solo se admiten clases de lunes a viernes')
-    for campo in ('semanas', 'semanas_desarrollo', 'semilla'):
-        if type(config[campo]) is not int or config[campo] < 0:
-            raise ValueError(f'configuracion: {campo} debe ser un entero no negativo')
-    if not 0 < config['semanas_desarrollo'] < config['semanas']:
-        raise ValueError('configuracion: semanas_desarrollo/semanas: cada partición necesita al menos una semana')
-    numero_finito(config['nevera_wh_dia'], 'nevera_wh_dia')
-    for campo in ('variacion_lectiva', 'variacion_nevera'):
-        valores = config[campo]
-        if not isinstance(valores, list) or len(valores) != 2:
-            raise ValueError(f'configuracion: {campo} debe contener dos límites')
-        for valor in valores:
-            numero_finito(valor, campo)
-        if valores[0] > valores[1]:
-            raise ValueError(f'configuracion: {campo} tiene los límites invertidos')
-
-    cargas = config['cargas']
-    if not isinstance(cargas, list) or not cargas:
-        raise ValueError('configuracion: cargas debe ser una lista no vacía')
-    ids = [carga['id'] for carga in cargas]
-    if any(not isinstance(id_, str) or not id_.strip() for id_ in ids) or len(set(ids)) != len(ids):
-        raise ValueError('configuracion: cargas.id debe ser texto no vacío y único')
-    if [carga['id'] for carga in cargas if carga['permanente']] != [ID_NEVERA]:
-        raise ValueError(f'configuracion: cargas.permanente: solo {ID_NEVERA} puede ser permanente')
-    for carga in cargas:
-        campo = f'cargas[{carga["id"]}]'
-        if type(carga['cantidad']) is not int or carga['cantidad'] != 1:
-            raise ValueError(f'configuracion: {campo}.cantidad debe ser 1: catálogo de equipos individuales')
-        if type(carga['permanente']) is not bool:
-            raise ValueError(f'configuracion: {campo}.permanente debe ser booleano')
-        for atributo in ('potencia_w_supuesta', 'ocupacion_base_supuesta'):
-            numero_finito(carga[atributo], f'{campo}.{atributo}')
-        if carga['ocupacion_base_supuesta'] > 1:
-            raise ValueError(f'configuracion: {campo}.ocupacion_base_supuesta debe ser <= 1')
-        if type(carga['prioridad_supuesta']) is not int or carga['prioridad_supuesta'] <= 0:
-            raise ValueError(f'configuracion: {campo}.prioridad_supuesta debe ser un entero positivo')
-        numero_finito(carga['inicio_h'], f'{campo}.inicio_h', estricto=False)
-        numero_finito(carga['fin_h'], f'{campo}.fin_h')
-        if not carga['inicio_h'] < carga['fin_h'] <= 24:
-            raise ValueError(f'configuracion: {campo}: ventana inválida [inicio_h, fin_h)')
-        if carga['permanente']:
-            if carga['inicio_h'] != 0 or carga['fin_h'] != 24:
-                raise ValueError(f'configuracion: {campo}: la nevera debe estar disponible las 24 h')
-        elif not CLASES_INICIO_H <= carga['inicio_h'] < carga['fin_h'] <= CLASES_FIN_H:
-            raise ValueError(f'configuracion: {campo}: ventana fuera de clases de 07:00 a 12:30')
-
-    lecturas = config['lecturas']
-    if not isinstance(lecturas, list) or len(lecturas) != 5:
-        raise ValueError('configuracion: lecturas: se esperan 5 lecturas del medidor')
-    for indice, lectura in enumerate(lecturas):
-        if lectura['dia'] != DIAS_SEMANA[indice]:
-            raise ValueError(f'configuracion: lecturas[{indice}].dia debe ser {DIAS_SEMANA[indice]}')
-        valor = lectura['entero_kwh']
-        if type(valor) is not int or valor < 0:
-            raise ValueError(f'configuracion: lecturas[{indice}].entero_kwh debe ser un entero no negativo')
-        if indice and valor <= lecturas[indice - 1]['entero_kwh']:
-            raise ValueError(f'configuracion: lecturas[{indice}].entero_kwh debe ser estrictamente creciente')
-
-    try:
-        inicio_fecha = date.fromisoformat(config['fecha_inicio_sintetica'])
-    except (TypeError, ValueError) as error:
-        raise ValueError('configuracion: fecha_inicio_sintetica debe ser una fecha ISO (YYYY-MM-DD)') from error
-    if inicio_fecha.weekday() != 0:
-        raise ValueError('configuracion: fecha_inicio_sintetica debe ser lunes')
-    zona = ZoneInfo(config['zona_horaria'])
-    periodos = []
-    for nombre in ('historial_previo', 'desarrollo', 'evaluacion', 'reserva_no_usada'):
-        fechas = []
-        for limite in ('inicio', 'fin'):
-            try:
-                fecha = datetime.fromisoformat(config['periodos'][nombre][limite])
-            except ValueError as error:
-                raise ValueError(f'configuracion: periodos.{nombre}.{limite} debe ser ISO con zona horaria') from error
-            if fecha.tzinfo is None or fecha.utcoffset() != fecha.astimezone(zona).utcoffset():
-                raise ValueError(f'configuracion: periodos.{nombre}.{limite} debe usar la zona {zona}')
-            if fecha.hour or fecha.minute or fecha.second or fecha.microsecond:
-                raise ValueError(f'configuracion: periodos.{nombre}.{limite} debe ser medianoche local')
-            fechas.append(fecha)
-        if fechas[0] >= fechas[1] or (periodos and periodos[-1][1] != fechas[0]):
-            raise ValueError(f'configuracion: periodos.{nombre}: los periodos deben ser positivos y contiguos')
-        periodos.append(fechas)
-    inicio = datetime.combine(inicio_fecha, datetime.min.time(), zona)
-    if (periodos[1][0] != inicio
-            or periodos[1][1] != inicio + timedelta(weeks=config['semanas_desarrollo'])
-            or periodos[2][1] != inicio + timedelta(weeks=config['semanas'])):
-        raise ValueError('configuracion: periodos desarrollo/evaluacion no coinciden con fecha_inicio_sintetica y semanas')
+from .configuracion import (
+    CLASES_FIN_H, CLASES_INICIO_H, DIAS_LECTIVOS, DIAS_SEMANA, HORAS_CON_CLASE,
+    ID_NEVERA, RESOLUCION_H, cargar_configuracion, validar_demanda,
+)
 
 
 def horas_solapadas(hora, inicio_h, fin_h):
@@ -304,7 +188,7 @@ def generar_demanda(config):
     Devuelve tres listas de filas (diccionarios): demanda horaria total, demanda por
     carga y hora, y resumen diario.
     """
-    validar_configuracion(config)
+    validar_demanda(config)
     lecturas = config['lecturas']
     # Energía entre lecturas consecutivas del medidor (Wh); son los intervalos I1 a I4.
     referencias_wh = [1000 * (fin['entero_kwh'] - inicio['entero_kwh'])
@@ -499,8 +383,6 @@ def guardar_csv(ruta, filas):
 
 def generar_archivos(config_path, salida=None):
     """Regenera el caso en la carpeta elegida y devuelve su resumen de validación."""
-    from .configuracion import cargar_configuracion
-
     config_path = Path(config_path).resolve()
     config = cargar_configuracion(config_path)
     horaria, por_carga, diaria = generar_demanda(config)
