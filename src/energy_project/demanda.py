@@ -1,14 +1,8 @@
-"""Genera la demanda eléctrica SINTÉTICA y reproducible del Centro Educativo Rural El Rayo.
+"""Modelo de la demanda eléctrica SINTÉTICA del Centro Educativo Rural El Rayo (energía en Wh).
 
-Ejecutar desde la raíz: uv run python scripts/generar_datos.py
-Para cambiar los supuestos, modificar scripts/configuracion.json.
-
-Lee la configuración indicada y escribe en data/ por defecto:
-- demanda_horaria.csv, demanda_por_carga.csv y demanda_diaria.csv: demanda sintética (Wh).
-- lecturas_medidor.csv e intervalos_medidor.csv: lecturas del medidor y sus diferencias.
-- catalogo_cargas.csv: las cargas de configuracion.json.
-- calendario_simulacion.csv e irradiancia_simulacion.csv: alineación con el histórico local.
-- validacion.json (resumen de las comprobaciones) y sha256.json (hashes de los CSV).
+Genera, de forma reproducible a partir de la semilla de configuracion.json, la demanda horaria
+por carga, la demanda horaria total y el resumen diario, además del calendario, las lecturas del
+medidor y sus intervalos. No lee ni escribe archivos: de eso se encarga generacion.py.
 
 Procedimiento para cada día (ver docs/IDEA.md y docs/datos.md):
 1. Objetivo diario de energía. En un día lectivo se elige al azar, con reemplazo, una de
@@ -17,24 +11,17 @@ Procedimiento para cada día (ver docs/IDEA.md y docs/datos.md):
 2. La nevera consume `nevera_wh_dia` por un factor uniforme en `variacion_nevera`,
    repartido entre las 24 horas.
 3. El resto del objetivo (actividad escolar) se reparte entre las franjas carga-hora de
-   las cargas no permanentes, sin superar potencia × horas disponibles. Si no cabe, el
-   script falla: no recorta la demanda ni añade cargas ocultas.
+   las cargas no permanentes, sin superar potencia × horas disponibles. Si no cabe, se lanza
+   un error: no se recorta la demanda ni se añaden cargas ocultas.
 """
-import argparse
-import csv
-import hashlib
-import json
-import math
 import random
 from datetime import date, datetime, timedelta
-from pathlib import Path
-from statistics import mean
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from .configuracion import (
     CLASES_FIN_H, CLASES_INICIO_H, DIAS_LECTIVOS, DIAS_POR_SEMANA, DIAS_SEMANA, HORAS_CON_CLASE,
-    HORAS_DIA, ID_NEVERA, RESOLUCION_H, cargar_configuracion, validar_demanda,
+    HORAS_DIA, ID_NEVERA, RESOLUCION_H, validar_demanda,
 )
 
 
@@ -410,136 +397,3 @@ def filas_intervalos(lecturas):
             origen="derivado; no_dia_confirmado",
         ))
     return filas
-
-
-def resumen_validacion(config, horaria, por_carga, diaria):
-    """Tamaños, energía generada (kWh) y comprobaciones superadas por la demanda."""
-    demanda_lectiva_wh = [fila['demanda_total_wh'] for fila in diaria if fila['es_lectivo']]
-    demanda_fin_semana_wh = [fila['demanda_total_wh'] for fila in diaria if not fila['es_lectivo']]
-    return dict(
-        estado='VALIDADO_BAJO_SUPUESTOS_PROVISIONALES',
-        horas=len(horaria),
-        dias=len(diaria),
-        cargas_individuales=len(config['cargas']),
-        filas_carga_hora=len(por_carga),
-        total_kwh=round(sum(fila['demanda_total_wh'] for fila in diaria) / 1000, 6),
-        media_lectiva_kwh=round(mean(demanda_lectiva_wh) / 1000, 6),
-        media_fin_semana_kwh=round(mean(demanda_fin_semana_wh) / 1000, 6),
-        max_error_conservacion_wh=max(abs(fila['demanda_total_wh'] - fila['objetivo_wh']) for fila in diaria),
-        comprobaciones=[
-            'Reproducibilidad exacta',
-            'Sin huecos ni duplicados temporales',
-            'Demanda no negativa',
-            'Potencia y ventana de cada carga respetadas',
-            'Solo nevera fuera de clases y en fin de semana',
-            'Conservacion diaria con tolerancia 0.001 Wh',
-            'Particiones cronologicas sinteticas',
-        ],
-        alcance='Validacion de demanda; no valida todavia PV, baterias ni MPC',
-    )
-
-
-def subconjunto_solar(ruta, config, calendario):
-    """Selecciona el histórico ya normalizado, sin volver a desplazar sus intervalos."""
-    with ruta.open(encoding='utf-8-sig', newline='') as archivo:
-        lector = csv.DictReader(archivo)
-        columnas = ['inicio_intervalo', 'fin_intervalo', 'inicio_utc', 'fin_utc', 'duracion_h',
-                    'ghi_w_m2', 'irradiacion_wh_m2', 'fuente', 'modelo', 'particion']
-        if lector.fieldnames != columnas:
-            raise ValueError(f'{ruta}: columnas esperadas {columnas}; recibidas {lector.fieldnames}')
-        historico = list(lector)
-    limites = [(nombre, datetime.fromisoformat(periodo['inicio']), datetime.fromisoformat(periodo['fin']))
-               for nombre, periodo in config['periodos'].items()]
-    esperado = datetime.fromisoformat(config['periodos']['historial_previo']['inicio'])
-    fin_historico = datetime.fromisoformat(config['periodos']['reserva_no_usada']['fin'])
-    por_inicio = {}
-    zona = ZoneInfo(config['zona_horaria'])
-    for numero, fila in enumerate(historico, 2):
-        try:
-            inicio = datetime.fromisoformat(fila['inicio_intervalo'])
-            fin = datetime.fromisoformat(fila['fin_intervalo'])
-            inicio_utc = datetime.fromisoformat(fila['inicio_utc'])
-            fin_utc = datetime.fromisoformat(fila['fin_utc'])
-            duracion, ghi, irradiacion = (float(fila[campo]) for campo in
-                                          ('duracion_h', 'ghi_w_m2', 'irradiacion_wh_m2'))
-        except (TypeError, ValueError) as error:
-            raise ValueError(f'{ruta}: fila {numero}: fecha o valor solar inválido') from error
-        if any(fecha.tzinfo is None for fecha in (inicio, fin, inicio_utc, fin_utc)):
-            raise ValueError(f'{ruta}: fila {numero}: fechas sin zona horaria')
-        if inicio != esperado or inicio >= fin_historico or fin - inicio != timedelta(hours=1):
-            raise ValueError(f'{ruta}: fila {numero}: intervalo duplicado, faltante o fuera de periodo; esperado {esperado.isoformat()}')
-        if (inicio != inicio_utc or fin != fin_utc
-                or inicio.utcoffset() != inicio.astimezone(zona).utcoffset()
-                or fin.utcoffset() != fin.astimezone(zona).utcoffset()
-                or inicio_utc.utcoffset() != timedelta(0) or fin_utc.utcoffset() != timedelta(0)):
-            raise ValueError(f'{ruta}: fila {numero}: tiempos UTC/locales incoherentes')
-        if (not all(math.isfinite(valor) for valor in (duracion, ghi, irradiacion))
-                or duracion != 1 or ghi < 0 or irradiacion < 0
-                or not math.isclose(irradiacion, ghi, rel_tol=0, abs_tol=1e-6)):
-            raise ValueError(f'{ruta}: fila {numero}: duración o irradiancia inválida (W/m² y Wh/m²)')
-        particion = next((nombre for nombre, desde, hasta in limites if desde <= inicio < hasta), None)
-        if (fila['particion'] != particion or fila['fuente'] != config['irradiancia']['fuente']
-                or fila['modelo'] != config['irradiancia']['modelo']):
-            raise ValueError(f'{ruta}: fila {numero}: fuente, modelo o partición incoherente')
-        por_inicio[inicio] = fila
-        esperado = fin
-    if esperado != fin_historico:
-        raise ValueError(f'{ruta}: histórico incompleto: faltan intervalos desde {esperado.isoformat()}')
-    return [dict(t=fila['t'], **por_inicio[datetime.fromisoformat(fila['inicio_intervalo'])])
-            for fila in calendario]
-
-
-def guardar_csv(ruta, filas):
-    """Escribe filas con el orden de columnas de sus claves."""
-    with ruta.open('w', encoding='utf-8', newline='') as archivo:
-        escritor = csv.DictWriter(archivo, fieldnames=list(filas[0]))
-        escritor.writeheader()
-        escritor.writerows(filas)
-
-
-def generar_archivos(config_path, salida=None):
-    """Regenera el caso en la carpeta elegida y devuelve su resumen de validación."""
-    config_path = Path(config_path).resolve()
-    config = cargar_configuracion(config_path)
-    horaria, por_carga, diaria = generar_demanda(config)
-    calendario = generar_calendario(config)
-    rutas = {clave: (config_path.parent / valor).resolve() for clave, valor in config['datos'].items()}
-    destino = Path(salida).resolve() if salida is not None else rutas['demanda'].parent
-    nombres = {clave: ruta.name for clave, ruta in rutas.items()}
-    if len(set(nombres.values())) != len(nombres):
-        raise ValueError(f'{config_path}: datos: los nombres de los archivos deben ser distintos')
-    solar = subconjunto_solar(rutas['irradiancia_historica'], config, calendario)
-    contenido = dict(horaria=horaria, demanda=por_carga, diaria=diaria, catalogo=config['cargas'],
-                     lecturas=filas_lecturas(config['lecturas']), intervalos=filas_intervalos(config['lecturas']),
-                     calendario=calendario, irradiancia_simulacion=solar)
-    salidas = {clave: destino / nombres[clave] if salida is not None else ruta
-               for clave, ruta in rutas.items()}
-    for clave, filas in contenido.items():
-        salidas[clave].parent.mkdir(parents=True, exist_ok=True)
-        guardar_csv(salidas[clave], filas)
-    ruta_historica = salidas['irradiancia_historica']
-    if ruta_historica != rutas['irradiancia_historica']:
-        ruta_historica.write_bytes(rutas['irradiancia_historica'].read_bytes())
-    validacion = resumen_validacion(config, horaria, por_carga, diaria)
-    texto_validacion = json.dumps(validacion, ensure_ascii=False, indent=2)
-    (destino / 'validacion.json').write_text(texto_validacion + '\n', encoding='utf-8')
-    hashes = {ruta.name: hashlib.sha256(ruta.read_bytes()).hexdigest()
-              for ruta in sorted(salidas.values())}
-    (destino / 'sha256.json').write_text(json.dumps(hashes, indent=2) + '\n', encoding='utf-8')
-    return validacion
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', type=Path, default=Path('scripts/configuracion.json'))
-    parser.add_argument('--salida', type=Path, help='Carpeta de salida; por defecto, carpeta de datos configurada')
-    args = parser.parse_args()
-    try:
-        resumen = generar_archivos(args.config, args.salida)
-    except (OSError, ValueError) as error:
-        parser.exit(1, f'Error: {error}\n')
-    print(json.dumps(resumen, ensure_ascii=False, indent=2))
-
-
-if __name__ == '__main__':
-    main()
