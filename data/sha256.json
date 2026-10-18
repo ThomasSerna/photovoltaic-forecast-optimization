@@ -1,0 +1,11 @@
+{
+  "calendario_simulacion.csv": "d5fea9d11016be5877520562f0e5005656d374db1d798b19335c731488b812c7",
+  "catalogo_cargas.csv": "6551ac837f5ea33dd92721ccae2a2005ff6ca3d7bffb488aaadfaba141fd1044",
+  "demanda_diaria.csv": "8fcb801524494fc5401c39d22e0c972bbf465070dcd1b11eb1bde12fb7a371d4",
+  "demanda_horaria.csv": "7b40e9afb7c2d4400e5e709694361fd0d6b5660d880edba3aaed024c03e67dfc",
+  "demanda_por_carga.csv": "5a36facb22ed58fd46c12daf8a09d4e692162e478787c3c5f507fed9837c8144",
+  "intervalos_medidor.csv": "6dd8d4d93a02ee45ea9c0c4ab917ddee6cf8f075d2a630081d852f79486ec7ce",
+  "irradiancia_historica.csv": "aca8b1abb3eedcd85db6e54c58cdd528337d3bfd7e42f0ba56538bbe344c4b47",
+  "irradiancia_simulacion.csv": "a4437554ab76b7807d08419b3f9bf4ea31e4065a19167a1ef9d3f88c0dc6093c",
+  "lecturas_medidor.csv": "bfe39b10fca46e579061c0aa122299753af81c0eeeb00cd420d62c8ee4a8c57a"
+}

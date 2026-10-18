@@ -1,0 +1,6 @@
+orden,dia,fecha,hora,entero_kwh,decimal_kwh,cota_inferior_kwh,cota_superior_exclusiva_kwh,fuente,estado
+1,lunes,,,36075,,36075,36076,lunes.jpeg,entero_transcrito; decimal_no_usado
+2,martes,,,36082,,36082,36083,martes.jpeg,entero_transcrito; decimal_no_usado
+3,miercoles,,,36087,,36087,36088,miercoles.jpeg,entero_transcrito; decimal_no_usado
+4,jueves,,,36096,,36096,36097,jueves.jpeg,entero_transcrito; decimal_no_usado
+5,viernes,,,36103,,36103,36104,viernes.jpeg,entero_transcrito; decimal_no_usado

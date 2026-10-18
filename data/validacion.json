@@ -1,0 +1,21 @@
+{
+  "estado": "VALIDADO_BAJO_SUPUESTOS_PROVISIONALES",
+  "horas": 2016,
+  "dias": 84,
+  "cargas_individuales": 13,
+  "filas_carga_hora": 26208,
+  "total_kwh": 460.019613,
+  "media_lectiva_kwh": 6.956613,
+  "media_fin_semana_kwh": 1.775951,
+  "max_error_conservacion_wh": 6.000000212225132e-06,
+  "comprobaciones": [
+    "Reproducibilidad exacta",
+    "Sin huecos ni duplicados temporales",
+    "Demanda no negativa",
+    "Potencia y ventana de cada carga respetadas",
+    "Solo nevera fuera de clases y en fin de semana",
+    "Conservacion diaria con tolerancia 0.001 Wh",
+    "Particiones cronologicas sinteticas"
+  ],
+  "alcance": "Validacion de demanda; no valida todavia PV, baterias ni MPC"
+}

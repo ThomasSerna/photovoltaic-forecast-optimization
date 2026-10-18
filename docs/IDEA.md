@@ -4,7 +4,7 @@
 
 **Caso:** simulación de un sistema fotovoltaico aislado hipotético, contextualizado en el Centro Educativo Rural El Rayo, Támesis, Antioquia (5.5610705, -75.8092448).  
 **Versión:** 4, revisión del 18 de octubre de 2026, hora de Colombia: restricciones individuales por batería y datos preparados.  
-**Estado:** datos preparados y publicados en el repositorio; implementación del simulador pendiente. Las comprobaciones de datos no son resultados de comparación de controladores. Potencias, prioridades e infraestructura son supuestos por validar.  
+**Estado:** HU-01 implementada: datos, ingesta validada, configuración provisional y ejecución reproducible; implementación del simulador pendiente. Las comprobaciones de datos no son resultados de comparación de controladores. Potencias, prioridades e infraestructura son supuestos por validar.
 **Alcance:** investigación computacional; no instalación física, estudio económico ni diagnóstico de electrificación de la escuela.
 
 **Pregunta:** manteniendo el mismo sistema físico, demanda, generador de trayectorias y controlador, ¿cambia la satisfacción ponderada de demanda cuando las distribuciones de irradiancia basadas en beta se sustituyen por pronósticos de Chronos-2?
@@ -182,7 +182,7 @@ Unidades explícitas; intervalos sin duplicados; cobertura; faltantes; no negati
 2. Calibración/desarrollo para elegir ventanas, evaluar cobertura, construir dependencia y fijar parámetros.
 3. Test final reservado, continuo y común.
 
-Se descargaron 17544 horas completas de 2024–2025, sin faltantes, negativos, duplicados ni saltos. El máximo registrado es 1083 W/m²; no se recortó a 1000. Se conservan respuesta original, consulta exacta, metadatos y script en el paquete de datos preparado; deben incorporarse al repositorio para completar la trazabilidad.
+Se descargaron 17544 horas completas de 2024–2025, sin faltantes, negativos, duplicados ni saltos. El máximo registrado es 1083 W/m²; no se recortó a 1000. El repositorio conserva ese snapshot, pero no contiene su respuesta cruda original ni la consulta exacta utilizada. No se considera recuperada su trazabilidad original.
 
 | Uso | Inicio inclusivo local | Fin exclusivo local | Horas |
 |---|---|---|---:|
@@ -464,7 +464,7 @@ El backlog consta de siete issues en [ThomasSerna/proyecto-optimizacion](https:/
 | [HU-06](https://github.com/ThomasSerna/proyecto-optimizacion/issues/6) | Implementar MPC compartido |
 | [HU-07](https://github.com/ThomasSerna/proyecto-optimizacion/issues/7) | Ejecutar y comparar ambos modelos |
 
-HU-01 está parcialmente avanzada por la preparación de CSV y documentación. Faltan ingesta ejecutable, validaciones en código, configuración FV y por batería, semillas, cortes temporales e instrucciones de instalación y ejecución. Tener archivos en `data/` no completa la historia. El generador y la respuesta original disponibles en los paquetes deben conservarse con rutas documentadas. Las pruebas pertinentes se incluyen dentro de cada funcionalidad; artículo y exposición son entregables académicos fuera del backlog de desarrollo.
+HU-01 cuenta con ingesta ejecutable, validaciones de datos y parámetros, configuración FV y por batería, semillas, cortes temporales, generador reproducible e instrucciones de instalación y ejecución. Los cinco CSV originales conservan su contenido y se publican también los resúmenes y transcripciones derivados. La infraestructura queda configurada como supuesto sin calibrar: no se ha implementado todavía su operación. La respuesta solar cruda original sigue ausente. Las pruebas pertinentes se incluyen dentro de cada funcionalidad; artículo y exposición son entregables académicos fuera del backlog de desarrollo.
 
 ## 15. Dependencias y reproducibilidad
 
@@ -497,9 +497,9 @@ No hacen falta solver MILP, entrenamiento del modelo ni infraestructura en la nu
 
 **Definido en esta versión propuesta:** dos ramas; GHI como única variable pronosticada inicial; demanda programada; Chronos sin ajuste de pesos; física, trayectorias y MPC compartidos; reserva anticipatoria y selección esperada; sin MILP; simulación horaria.
 
-**Resuelto provisionalmente:** ubicación, fuente ERA5, periodo histórico, calendario semisintético, catálogo de 13 cargas y archivos de demanda e irradiancia.
+**Resuelto provisionalmente:** ubicación, fuente ERA5, periodo histórico, calendario semisintético, catálogo de 13 cargas, archivos de demanda e irradiancia y configuración inicial FV/baterías de HU-01. Ver valores y unidades en `docs/datos.md`.
 
-**Pendiente:** fechas/horas/décimas del medidor, equipos operativos e iluminación, potencias y consumo permanente; dimensionamiento FV, cada batería con capacidad, mínimos, máximos, límites de potencia, eficiencias y estado inicial; soporte beta, límite operativo de cuantiles, ventanas, tolerancias, versiones y prueba de hardware. Estos parámetros deben fijarse con desarrollo, sin consultar el resultado comparativo del test.
+**Pendiente:** fechas/horas/décimas del medidor, equipos operativos e iluminación, potencias y consumo permanente; calibración del dimensionamiento FV y de los parámetros individuales de las baterías; soporte beta, límite operativo de cuantiles, ventanas, tolerancias físicas, versiones de pronóstico y prueba de hardware de Chronos. Estos parámetros deben fijarse con desarrollo, sin consultar el resultado comparativo del test. HU-01 fija un entorno Python bloqueado y tolerancias de validación de datos; no sustituye esa calibración.
 
 El protocolo registra quién fijó cada parámetro, con qué datos y antes de qué ejecución. Los valores iniciales recomendados no se presentan como calibración terminada.
 

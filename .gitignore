@@ -26,3 +26,7 @@ dist/
 
 # Archivos temporales de Jupyter
 .ipynb_checkpoints/
+
+# Informes regenerables y nuevas adquisiciones (el snapshot de data/ se conserva)
+results/
+data/adquisiciones/

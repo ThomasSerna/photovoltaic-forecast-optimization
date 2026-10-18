@@ -15,6 +15,14 @@ Los siguientes archivos se encuentran en `data/`:
 | `irradiancia_historica.csv` | 17.544 registros horarios de irradiancia de 2024 y 2025, utilizados como historial para beta y Chronos-2. |
 | `irradiancia_simulacion.csv` | Subconjunto de 2.016 horas de irradiancia para las 12 semanas de simulación. |
 | `calendario_simulacion.csv` | Correspondencia entre el índice horario `t` de la demanda y las fechas de simulación. |
+| `demanda_horaria.csv` | Suma horaria de las cargas, con energía de nevera y actividad escolar, en Wh. |
+| `demanda_diaria.csv` | Objetivo diario, referencia sorteada, multiplicador y total conciliado, en Wh. |
+| `lecturas_medidor.csv` | Partes enteras transcritas y cotas; fechas, horas y décimas vacías porque no se conocen. |
+| `intervalos_medidor.csv` | Cuatro diferencias provisionales y cotas abiertas; duración de 24 h supuesta. |
+
+`validacion.json` y `sha256.json` son salidas reproducibles del generador. Las
+fechas vacías de las lecturas y la duración real desconocida de sus intervalos
+son ausencias intencionales; no se rellenan con fechas de simulación.
 
 ## Origen y supuestos
 
@@ -67,3 +75,45 @@ intervalo correspondiente.
 
 La evaluación utiliza consumo sintético y no constituye una validación
 independiente con mediciones reales de la escuela.
+
+## Ingesta ejecutable y configuración provisional (HU-01)
+
+`uv run energy-project --config scripts/configuracion.json` valida los archivos
+contra su configuración y semilla, sin escribirlos. Comprueba números finitos,
+claves/rejilla carga-hora, cobertura, horarios, unidades, metadatos, conservación
+diaria y que la serie solar de simulación coincide con el histórico. Rechaza
+errores con excepciones explícitas, incluso al ejecutar Python con `-O`.
+
+El catálogo, los resúmenes y la demanda deben reproducir el generador declarado:
+no se aceptan cambios manuales que conserven únicamente el total diario pero no
+correspondan a su semilla. Los CSV solares ya representan intervalos corregidos;
+la ingesta no resta otra hora, interpola ni recorta GHI a 1000 W/m².
+
+Los periodos locales se fijan con extremos derechos exclusivos:
+
+| Partición | Inicio | Fin | Horas |
+|---|---|---|---:|
+| Historial previo | 2024-01-01 | 2025-01-06 | 8904 |
+| Desarrollo | 2025-01-06 | 2025-03-03 | 1344 |
+| Evaluación | 2025-03-03 | 2025-03-31 | 672 |
+| Reserva no usada | 2025-03-31 | 2026-01-01 | 6624 |
+
+La configuración inicial incluye cuatro paneles de 500 W (2000 W nominales),
+arreglo horizontal equivalente, factor de desempeño 0,85, inversor de 2000 W y
+suministro a cargas limitado a 3000 W. Incluye dos baterías individuales de
+2400 Wh: mínimo 480, máximo 2400 e inicial 1440 Wh por batería, límites de carga
+y descarga de 600 W medidos en el bus y eficiencias de 0,95. Son **supuestos del
+proyecto sin calibración**, no equipos medidos ni valores atribuidos al paper.
+No se agregan estados ni límites de las baterías en la ingesta.
+
+Intervalo: 1 h; horizonte: 24 intervalos; replanificación: 6; escenarios: 50.
+Semilla de demanda: 20261018; semilla reservada para escenarios: 20261019.
+Configurar escenarios no implementa todavía su muestreo ni garantiza números
+aleatorios comunes. El estado inicial se refiere al inicio de la simulación;
+los cortes desarrollo/evaluación no prescriben reinicios de batería.
+
+La correspondencia con ecuaciones (1)–(9), objetivo (10) y algoritmos del paper
+se implementará en las siguientes historias según las correcciones y
+adaptaciones registradas en IDEA.md, secciones 3 y 7. HU-01 verifica datos y
+dominios de parámetros; no verifica aún balances FV/baterías ni satisfacción
+de demanda atendida.

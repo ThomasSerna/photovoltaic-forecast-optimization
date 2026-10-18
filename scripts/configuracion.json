@@ -1,10 +1,10 @@
 {
-  "version": "0.1-provisional",
+  "version": "0.2-provisional",
   "sitio": "Centro Educativo Rural El Rayo, Támesis, Antioquia",
   "latitud": 5.5610705,
   "longitud": -75.8092448,
   "zona_horaria": "America/Bogota",
-  "fecha_inicio_sintetica": null,
+  "fecha_inicio_sintetica": "2025-01-06",
   "fechas_mediciones_confirmadas": false,
   "horas_mediciones_confirmadas": false,
   "resolucion_h": 1,
@@ -20,6 +20,40 @@
   "semanas": 12,
   "semanas_desarrollo": 8,
   "semilla": 20261018,
+  "semilla_escenarios": 20261019,
+  "horizonte": 24,
+  "replanificacion": 6,
+  "escenarios": 50,
+  "potencia_bus_max_w": 3000,
+  "datos": {
+    "catalogo": "../data/catalogo_cargas.csv",
+    "demanda": "../data/demanda_por_carga.csv",
+    "diaria": "../data/demanda_diaria.csv",
+    "horaria": "../data/demanda_horaria.csv",
+    "lecturas": "../data/lecturas_medidor.csv",
+    "intervalos": "../data/intervalos_medidor.csv",
+    "calendario": "../data/calendario_simulacion.csv",
+    "irradiancia_historica": "../data/irradiancia_historica.csv",
+    "irradiancia_simulacion": "../data/irradiancia_simulacion.csv"
+  },
+  "periodos": {
+    "historial_previo": {
+      "inicio": "2024-01-01T00:00:00-05:00",
+      "fin": "2025-01-06T00:00:00-05:00"
+    },
+    "desarrollo": {
+      "inicio": "2025-01-06T00:00:00-05:00",
+      "fin": "2025-03-03T00:00:00-05:00"
+    },
+    "evaluacion": {
+      "inicio": "2025-03-03T00:00:00-05:00",
+      "fin": "2025-03-31T00:00:00-05:00"
+    },
+    "reserva_no_usada": {
+      "inicio": "2025-03-31T00:00:00-05:00",
+      "fin": "2026-01-01T00:00:00-05:00"
+    }
+  },
   "variacion_lectiva": [
     0.95,
     1.05
@@ -33,9 +67,51 @@
   "fecha_hoja_elegida": "2026-07-31",
   "politica_calendario": "semana relativa; todos lunes-viernes lectivos; sin festivos ni vacaciones",
   "demanda_conocida_mpc": "programacion sintetica exogena comun a ambos modelos; supuesto experimental",
-  "pv": null,
-  "baterias": null,
-  "irradiancia": null,
+  "pv": {
+    "paneles": 4,
+    "potencia_panel_w": 500,
+    "potencia_nominal_w": 2000,
+    "inversor_max_w": 2000,
+    "factor_desempeno": 0.85,
+    "geometria": "horizontal_equivalente",
+    "estado_parametros": "supuestos_no_calibrados"
+  },
+  "baterias": [
+    {
+      "id": "bateria_01",
+      "capacidad_wh": 2400,
+      "minimo_wh": 480,
+      "maximo_wh": 2400,
+      "inicial_wh": 1440,
+      "potencia_carga_max_w": 600,
+      "potencia_descarga_max_w": 600,
+      "eficiencia_carga": 0.95,
+      "eficiencia_descarga": 0.95,
+      "limites_potencia": "bus",
+      "estado_parametros": "supuestos_no_calibrados"
+    },
+    {
+      "id": "bateria_02",
+      "capacidad_wh": 2400,
+      "minimo_wh": 480,
+      "maximo_wh": 2400,
+      "inicial_wh": 1440,
+      "potencia_carga_max_w": 600,
+      "potencia_descarga_max_w": 600,
+      "eficiencia_carga": 0.95,
+      "eficiencia_descarga": 0.95,
+      "limites_potencia": "bus",
+      "estado_parametros": "supuestos_no_calibrados"
+    }
+  ],
+  "irradiancia": {
+    "fuente": "Open-Meteo",
+    "modelo": "ERA5",
+    "variable": "shortwave_radiation",
+    "unidad": "W/m²",
+    "disponibilidad": "fin_intervalo_idealizada",
+    "respuesta_original_disponible": false
+  },
   "lecturas": [
     {
       "dia": "lunes",

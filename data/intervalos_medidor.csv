@@ -1,0 +1,5 @@
+id,inicio,fin,diferencia_enteros_kwh,cota_inferior_abierta_kwh,cota_superior_abierta_kwh,duracion_real_h,duracion_supuesta_h,origen
+I1,lunes,martes,7,6,8,,24,derivado; no_dia_confirmado
+I2,martes,miercoles,5,4,6,,24,derivado; no_dia_confirmado
+I3,miercoles,jueves,9,8,10,,24,derivado; no_dia_confirmado
+I4,jueves,viernes,7,6,8,,24,derivado; no_dia_confirmado
