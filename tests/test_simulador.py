@@ -2,10 +2,13 @@
 
 from copy import deepcopy
 import math
+from pathlib import Path
 
+import pandas as pd
 import pytest
 
-from energy_project.simulador import _despachar, _energia_fotovoltaica, _limite_descarga
+from energy_project import cargar_caso
+from energy_project.simulador import _despachar, _energia_fotovoltaica, _limite_descarga, simular
 
 
 @pytest.fixture
@@ -89,3 +92,240 @@ def test_limites_individuales_y_orden_determinista(bateria):
     # Mucha energía almacenada no permite violar las potencias de descarga.
     with pytest.raises(ValueError, match="balance del bus"):
         _despachar(0., 31., [bateria, otra], {"a": 100., "b": 100.})
+
+
+@pytest.fixture
+def sistema(bateria):
+    return dict(resolucion_h=1, potencia_bus_max_w=100.,
+                pv=dict(potencia_nominal_w=100., inversor_max_w=100., factor_desempeno=1.),
+                baterias=[dict(bateria, inicial_wh=20.)])
+
+
+def _demanda(*cargas, t=0):
+    """Cada tupla contiene id, Wh solicitados, prioridad y potencia nominal W."""
+    tabla = pd.DataFrame(cargas, columns=["carga_id", "demanda_wh", "prioridad_supuesta",
+                                         "potencia_w_supuesta"])
+    tabla["t"] = t
+    tabla["solicitada"] = (tabla["demanda_wh"] > 0).astype(int)
+    return tabla
+
+
+def _solar(*ghi, t=0):
+    return pd.DataFrame({"t": range(t, t + len(ghi)), "ghi_w_m2": ghi})
+
+
+@pytest.mark.parametrize("cargas,elegida", [
+    ([("a", 5., 2, 5.), ("b", 10., 2, 10.), ("c", 10., 1, 10.)], "b"),
+    ([("b", 10., 2, 10.), ("a", 10., 2, 10.)], "a"),
+    ([("a", 10., 1, 10.), ("b", 5., 2, 5.)], "b"),
+])
+def test_orden_por_prioridad_demanda_e_identificador(sistema, cargas, elegida):
+    resultado = simular(_demanda(*cargas), _solar(100.), sistema)
+    detalle = resultado["cargas"]
+    assert detalle.loc[detalle["z"] == 1, "carga_id"].tolist() == [elegida]
+    assert detalle["x"].equals(detalle["z"])
+
+
+def test_rechazar_una_carga_no_gasta_bateria_ni_detiene_la_seleccion(sistema):
+    sistema["baterias"][0]["inicial_wh"] = 60.
+    demanda = _demanda(("grande", 30., 3, 30.), ("menor", 20., 2, 20.))
+    resultado = simular(demanda, _solar(0.), sistema)
+    assert resultado["cargas"].set_index("carga_id")["z"].to_dict() == {"grande": 0, "menor": 1}
+    assert resultado["baterias"]["descarga_wh"].tolist() == [20.]
+    assert resultado["estado_final"] == pytest.approx({"b": 35.})
+
+
+@pytest.mark.parametrize("limite", ["inversor", "bus"])
+def test_limite_nominal_es_distinto_de_la_energia_horaria(sistema, limite):
+    if limite == "inversor":
+        sistema["pv"]["inversor_max_w"] = 50.
+    else:
+        sistema["potencia_bus_max_w"] = 50.
+    demanda = _demanda(("a", 10., 2, 60.), ("b", 5., 1, 40.))
+    resultado = simular(demanda, _solar(1000.), sistema)
+    assert resultado["cargas"].set_index("carga_id")["z"].to_dict() == {"a": 0, "b": 1}
+    assert resultado["horas"]["potencia_atendida_w"].tolist() == [40.]
+
+
+def test_no_se_amplia_el_presupuesto_con_la_tolerancia(sistema):
+    sistema["baterias"][0]["inicial_wh"] = 60.
+    demanda = _demanda(("a", math.nextafter(25., math.inf), 1, 30.))
+    resultado = simular(demanda, _solar(0.), sistema)
+    assert resultado["cargas"]["z"].tolist() == [0]
+    assert resultado["baterias"]["descarga_wh"].tolist() == [0.]
+
+
+def test_compromiso_fijo_con_deficit_y_sin_sustituciones(sistema):
+    demanda = _demanda(("grande", 20., 3, 20.), ("pequena", 5., 1, 5.))
+    plan = demanda[["t", "carga_id"]].assign(x=[1, 0]).iloc[::-1]
+    resultado = simular(demanda, _solar(100.), sistema, compromisos=plan)
+    detalle = resultado["cargas"].set_index("carga_id")
+    assert detalle["x"].to_dict() == {"grande": 1, "pequena": 0}
+    assert detalle["z"].to_dict() == {"grande": 0, "pequena": 0}
+    assert detalle["comprometida_wh"].sum() == 20.
+    assert detalle["atendida_wh"].sum() == 0.
+    assert detalle["no_atendida_wh"].sum() == 25.
+    assert resultado["resumen"]["J"] == 0.
+    assert resultado["resumen"]["S_pond"] == 0.
+
+
+def test_baterias_heterogeneas_no_se_sustituyen_por_capacidad_agregada(sistema):
+    bateria = sistema["baterias"][0]
+    sistema["baterias"] = [dict(bateria, id="a", inicial_wh=100., potencia_descarga_max_w=5.),
+                           dict(bateria, id="b", inicial_wh=20., potencia_descarga_max_w=50.)]
+    demanda = _demanda(("a", 6., 2, 6.), ("b", 5., 1, 5.))
+    resultado = simular(demanda, _solar(0.), sistema)
+    assert resultado["cargas"]["z"].tolist() == [0, 1]
+    assert resultado["baterias"]["descarga_wh"].tolist() == [5., 0.]
+
+
+def test_beneficio_ponderado_y_solicitud_nula(sistema):
+    demanda = _demanda(("a", 10., 3, 10.), ("b", 5., 1, 5.))
+    resultado = simular(demanda, _solar(100.), sistema)
+    assert resultado["resumen"]["J"] == 30.
+    assert resultado["resumen"]["S_pond"] == pytest.approx(30 / 35)
+    nulo = simular(_demanda(("a", 0., 1, 10.)), _solar(1000.), sistema)
+    assert nulo["resumen"]["J"] == 0.
+    assert nulo["resumen"]["S_pond"] is None
+    assert nulo["cargas"]["z"].tolist() == [0]
+
+
+def test_servicio_completo_fraccionario_no_produce_energia_negativa(sistema):
+    demanda = _demanda(("a", 0.9, 1, 1.), ("b", 0.2, 1, 1.), ("c", 0.1, 1, 1.))
+    resultado = simular(demanda, _solar(12.), sistema)
+    assert resultado["cargas"]["z"].tolist() == [1, 1, 1]
+    assert resultado["horas"]["no_atendida_wh"].tolist() == [0.]
+    assert resultado["resumen"]["no_atendida_wh"] == 0.
+    assert resultado["resumen"]["atendida_wh"] <= resultado["resumen"]["solicitada_wh"]
+
+
+def test_continuidad_entre_horizontes_y_entradas_sin_mutacion(sistema):
+    demanda = pd.concat([_demanda(("a", energia, 1, 40.), t=t)
+                         for t, energia in enumerate([10., 20., 10., 40.])], ignore_index=True)
+    demanda = demanda.sample(frac=1, random_state=4)
+    solar = _solar(500., 0., 500., 0.).iloc[::-1]
+    plan = demanda[["t", "carga_id"]].assign(x=1)
+    estado = {"b": 20.}
+    antes = [tabla.copy(deep=True) for tabla in (demanda, solar, plan)]
+    config_antes, estado_antes = deepcopy(sistema), dict(estado)
+    completo = simular(demanda, solar, sistema, estado_inicial=estado, compromisos=plan)
+    primero = simular(demanda[demanda.t < 2], solar[solar.t < 2], sistema,
+                      estado_inicial=estado, compromisos=plan[plan.t < 2])
+    segundo = simular(demanda[demanda.t >= 2], solar[solar.t >= 2], sistema,
+                      estado_inicial=primero["estado_final"], compromisos=plan[plan.t >= 2])
+    for nombre in ("cargas", "horas", "baterias"):
+        unidos = pd.concat([primero[nombre], segundo[nombre]], ignore_index=True)
+        pd.testing.assert_frame_equal(completo[nombre].reset_index(drop=True), unidos)
+    assert completo["estado_final"] == segundo["estado_final"]
+    for tabla, original in zip((demanda, solar, plan), antes):
+        pd.testing.assert_frame_equal(tabla, original)
+    assert sistema == config_antes and estado == estado_antes
+
+
+@pytest.mark.parametrize("tabla,campo,valor", [
+    ("demanda", "demanda_wh", -1.), ("demanda", "demanda_wh", float("nan")),
+    ("demanda", "demanda_wh", True), ("demanda", "prioridad_supuesta", 1.5),
+    ("demanda", "prioridad_supuesta", 0), ("demanda", "potencia_w_supuesta", float("inf")),
+    ("demanda", "potencia_w_supuesta", 0.), ("demanda", "solicitada", 2),
+    ("demanda", "solicitada", 0), ("demanda", "carga_id", ""),
+    ("demanda", "t", 0.5), ("solar", "t", -1),
+    ("solar", "ghi_w_m2", -1.), ("solar", "ghi_w_m2", float("inf")),
+])
+def test_rechaza_numeros_y_claves_invalidos(sistema, tabla, campo, valor):
+    demanda, solar = _demanda(("a", 10., 1, 10.)), _solar(0.)
+    alterada = demanda if tabla == "demanda" else solar
+    alterada[campo] = alterada[campo].astype(object)
+    alterada.loc[0, campo] = valor
+    with pytest.raises(ValueError, match=campo):
+        simular(demanda, solar, sistema)
+
+
+@pytest.mark.parametrize("cambio", ["duplicado_demanda", "duplicado_solar", "falta_hora",
+                                  "salto", "falta_carga", "sin_columna", "vacia"])
+def test_rechaza_cobertura_incompleta_o_ambigua(sistema, cambio):
+    demanda = pd.concat([_demanda(("a", 10., 1, 10.), ("b", 5., 1, 5.), t=t)
+                         for t in range(2)], ignore_index=True)
+    solar = _solar(0., 0.)
+    if cambio == "duplicado_demanda":
+        demanda = pd.concat([demanda, demanda.iloc[:1]])
+    elif cambio == "duplicado_solar":
+        solar = pd.concat([solar, solar.iloc[:1]])
+    elif cambio == "falta_hora":
+        solar = solar.iloc[:1]
+    elif cambio == "salto":
+        demanda.loc[demanda.t == 1, "t"] = 2
+        solar.loc[1, "t"] = 2
+    elif cambio == "falta_carga":
+        demanda = demanda.iloc[:-1]
+    elif cambio == "sin_columna":
+        demanda = demanda.drop(columns="demanda_wh")
+    else:
+        demanda = demanda.iloc[:0]
+    with pytest.raises(ValueError):
+        simular(demanda, solar, sistema)
+
+
+@pytest.mark.parametrize("estado", [{}, {"otra": 20.}, {"b": 19.}, {"b": 101.},
+                                   {"b": float("nan")}, {"b": True}])
+def test_rechaza_estados_iniciales_invalidos(sistema, estado):
+    with pytest.raises(ValueError):
+        simular(_demanda(("a", 10., 1, 10.)), _solar(0.), sistema, estado_inicial=estado)
+
+
+@pytest.mark.parametrize("cambio", ["faltante", "duplicado", "ajeno", "fraccion", "booleano", "sin_solicitud"])
+def test_rechaza_compromisos_invalidos(sistema, cambio):
+    demanda = _demanda(("a", 10., 1, 10.), ("b", 0., 1, 10.))
+    plan = demanda[["t", "carga_id"]].assign(x=[1, 0])
+    if cambio == "faltante":
+        plan = plan.iloc[:1]
+    elif cambio == "duplicado":
+        plan = pd.concat([plan, plan.iloc[:1]])
+    elif cambio == "ajeno":
+        plan.loc[0, "carga_id"] = "otra"
+    else:
+        plan["x"] = plan["x"].astype(object)
+        plan.loc[0 if cambio != "sin_solicitud" else 1, "x"] = {
+            "fraccion": 0.5, "booleano": True, "sin_solicitud": 1}[cambio]
+    with pytest.raises(ValueError):
+        simular(demanda, _solar(0.), sistema, compromisos=plan)
+
+
+def test_desarrollo_completo_conserva_todos_los_limites_y_balances():
+    caso = cargar_caso(Path(__file__).resolve().parents[1] / "scripts/configuracion.json")
+    demanda = caso.demanda.loc[caso.demanda.particion == "desarrollo"]
+    solar = caso.irradiancia_simulacion.loc[caso.irradiancia_simulacion.particion == "desarrollo"]
+    resultado = simular(demanda, solar, caso.configuracion)
+    cargas, horas, flujos = (resultado[n] for n in ("cargas", "horas", "baterias"))
+    assert len(horas) == 1344
+    assert cargas["z"].isin([0, 1]).all() and cargas["x"].isin([0, 1]).all()
+    assert (cargas["z"] <= cargas["x"]).all() and (cargas["x"] <= cargas["solicitada"]).all()
+    assert (cargas["atendida_wh"] == cargas["demanda_wh"] * cargas["z"]).all()
+    nominal = (cargas["potencia_w_supuesta"] * cargas["z"]).groupby(cargas["t"]).sum()
+    assert (nominal <= min(caso.configuracion["pv"]["inversor_max_w"],
+                          caso.configuracion["potencia_bus_max_w"])).all()
+    neto = flujos.groupby("t")[["carga_wh", "descarga_wh"]].sum()
+    balance = horas.set_index("t").eval("fv_wh - atendida_wh - vertido_wh")
+    assert (balance + neto.descarga_wh - neto.carga_wh).abs().max() <= 1e-6
+    assert (horas["vertido_wh"] >= 0).all()
+    for bateria in caso.configuracion["baterias"]:
+        b = flujos.loc[flujos.bateria_id == bateria["id"]].reset_index(drop=True)
+        assert b["inicial_wh"].iloc[0] == bateria["inicial_wh"]
+        assert b["inicial_wh"].iloc[1:].tolist() == b["final_wh"].iloc[:-1].tolist()
+        assert b[["inicial_wh", "final_wh"]].ge(bateria["minimo_wh"]).all().all()
+        assert b[["inicial_wh", "final_wh"]].le(bateria["maximo_wh"]).all().all()
+        assert (b[["carga_wh", "descarga_wh"]] >= 0).all().all()
+        assert (b.carga_wh * b.descarga_wh == 0).all()
+        assert (b.descarga_wh <= bateria["potencia_descarga_max_w"]).all()
+        assert (b.carga_wh <= bateria["potencia_carga_max_w"]).all()
+        assert (b.descarga_wh <= bateria["eficiencia_descarga"] *
+                (b.inicial_wh - bateria["minimo_wh"])).all()
+        assert (b.carga_wh <= (bateria["maximo_wh"] - b.inicial_wh) /
+                bateria["eficiencia_carga"]).all()
+        error = b.final_wh - (b.inicial_wh + bateria["eficiencia_carga"] * b.carga_wh -
+                             b.descarga_wh / bateria["eficiencia_descarga"])
+        assert error.abs().max() <= 1e-6
+        assert resultado["estado_final"][bateria["id"]] == b["final_wh"].iloc[-1]
+    beneficio = (cargas.prioridad_supuesta * cargas.atendida_wh).sum()
+    solicitado = (cargas.prioridad_supuesta * cargas.demanda_wh).sum()
+    assert resultado["resumen"]["J"] == pytest.approx(beneficio)
+    assert resultado["resumen"]["S_pond"] == pytest.approx(beneficio / solicitado)

@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (18 de octubre de 2026):** **T01 y T02 completadas** (datos y pronósticos Chronos-2 verificados en CPU). **T03–T05 pendientes.**
+**Estado (18 de octubre de 2026):** **T01–T03 completadas** (datos, pronósticos Chronos-2 verificados en CPU y simulador energético). **T04–T05 pendientes.**
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -32,7 +32,7 @@ La formulación física de este documento **corrige inconsistencias impresas** y
 
 ## 3. Datos existentes: T01 completada
 
-Se **reutiliza** el código, los CSV y la configuración ya publicados; no se reimplementa la ingesta. El comando de preparación `energy-project` valida datos, sin simular energía. El ensayo T02 ejecuta Chronos-2 mediante `python -m energy_project.pronosticos`, con el extra `pronosticos`; todavía no hay simulador energético.
+Se **reutiliza** el código, los CSV y la configuración ya publicados; no se reimplementa la ingesta. El comando de preparación `energy-project` valida datos, sin simular energía. El ensayo T02 ejecuta Chronos-2 mediante `python -m energy_project.pronosticos`, con el extra `pronosticos`; T03 expone `energy_project.simulador.simular` desde Python.
 
 Datos principales en `data/`:
 
@@ -125,6 +125,12 @@ Se consultaron §2.2 (pp. 5–6) y los algoritmos 1–2 (p. 8) del [PDF oficial]
 
 La conversión FV, el paso horario, las eficiencias, los límites de potencia y la topología común son supuestos físicos del caso semisintético. Estas decisiones concretan una adaptación consistente; no validan numéricamente el caso original de Volcanes ni el comportamiento eléctrico dentro de una hora.
 
+### 4.6. Interfaz reproducible de T03
+
+`simular(demanda, irradiancia, configuracion, *, estado_inicial=None, compromisos=None)` recibe la demanda existente, una tabla explícita `t, ghi_w_m2` y la configuración validada de T01. El estado opcional es `{bateria_id: energia_wh}`; los compromisos opcionales son `t, carga_id, x` para todas las filas de demanda. Se validan horas consecutivas, claves, dominios y límites individuales, sin modificar entradas ni buscar meteorología por cuenta propia.
+
+Devuelve tablas `cargas` (solicitud, compromiso y servicio), `horas` (energías y vertido), `baterias` (estados y flujos individuales), el diccionario `estado_final` y un `resumen` de energías, \(J\) y \(S_{\mathrm{pond}}\). No escribe archivos. El ejemplo de README muestra la continuación mediante estados y la ejecución de un calendario fijo. La rutina es determinista y no introduce semillas nuevas; los datos sintéticos conservan las semillas de T01. Las pruebas incluyen casos manuales, heterogeneidad y recorrido completo de desarrollo; la comparación de control y pronósticos pertenece a T04–T05.
+
 ## 5. Pronósticos y escenarios: única diferencia A/B
 
 **A — Beta:** ajustar irradiancia positiva por hora/franja local usando solamente observaciones anteriores al origen de predicción; tratar horas nocturnas y masas de cero por separado. Priorizar una beta de cuatro parámetros si el ajuste resulta estable; si es inestable, fijar **antes del test** una beta escalada de dos parámetros como adaptación explícita. No reutilizar parámetros meteorológicos del artículo como si fueran mediciones de Támesis.
@@ -179,7 +185,7 @@ El resultado principal es la **diferencia pareada B−A** en servicio bajo la mi
 
 **Criterio de éxito del trabajo:** ejecutar ambos métodos de extremo a extremo, respetar la física, mostrar resultados reproducibles y explicar si Chronos-2 aporta o no una mejora bajo estos supuestos. **No** es necesario que Chronos-2 gane.
 
-## 8. Implementación compacta: T01 y T02 ya están hechas
+## 8. Implementación compacta: T01–T03 ya están hechas
 
 Conservar sin reescribir `data/`, `scripts/configuracion.json`, la ingesta/generación existente de `src/energy_project/` y sus pruebas actuales. No crear API, base de datos, interfaz web, framework de servicios ni abstracciones innecesarias.
 
@@ -199,11 +205,11 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 |---|---|---|
 | **T01 — Datos** ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)) | CSV, demanda semisintética, configuración y validación reproducibles | **Completada** |
 | **T02 — Chronos-2** ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)) | Pronosticar 24 h a partir de historia válida y graficar frente a irradiancia real | **Completada** |
-| **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)) | Reproducir física por batería, heurística y restricciones en casos verificables | Pendiente |
+| **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)) | Física corregida por batería, heurística y restricciones verificables | **Completada** |
 | **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | Pendiente |
 | **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | Pendiente |
 
-Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T02 está verificada; T03 implementará la física, T04 integrará pronósticos y simulador, y T05 presentará el experimento final.
+Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integrará pronósticos y simulador, y T05 presentará el experimento final.
 
 ## 9. Entregables y límites
 

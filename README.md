@@ -5,7 +5,7 @@ semisintético contextualizado en el Centro Educativo Rural El Rayo, Támesis:
 **referencia beta vs. pronósticos de Chronos-2**, con el mismo simulador físico
 y controlador MPC heurístico.
 
-**T01 completada:** datos, demanda sintética, configuración y validación.
+**T01–T03 completadas:** datos, pronósticos Chronos-2 y simulador energético.
 El comando de preparación descrito abajo todavía **no ejecuta el simulador**
 ni los pronósticos. El alcance matemático y el experimento se explican en
 [docs/IDEA.md](docs/IDEA.md).
@@ -14,7 +14,7 @@ ni los pronósticos. El alcance matemático y el experimento se explican en
 
 - **T01 — Preparación de datos:** completada ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)).
 - **T02 — Chronos-2:** completada y verificada en CPU ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
-- **T03 — Simulador energético y heurística:** pendiente ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)).
+- **T03 — Simulador energético y heurística:** completada ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)).
 - **T04 — Referencia beta y MPC compartido:** pendiente ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
 - **T05 — Comparación y resultados:** pendiente ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)).
 
@@ -86,7 +86,7 @@ pone a cero solo horas completamente fuera de amanecer–ocaso calculados con
 Astral. Conserva las horas de transición, usa un horizonte sin obstáculos y no
 consulta irradiancia futura. No se aplica techo superior, ni siquiera 1000 W/m².
 Son adaptaciones del proyecto (IDEA.md §5); Chronos no reproduce las ecuaciones
-físicas del artículo ni las modifica. T03 y T04 implementarán física y MPC.
+físicas del artículo ni las modifica. T03 implementa la física; el MPC pertenece a T04.
 
 El ensayo reproducible se ejecuta con:
 
@@ -134,6 +134,71 @@ carga inicial de **237,37 s** (incluye descarga/importación) y RSS máxima obse
 de **839,09 MiB**, en CPU AMD64/FP32 con 16 procesadores lógicos. Son cifras del
 ensayo corto de esta máquina, no rendimiento general ni comparación con beta.
 Los artefactos quedan en `results/chronos_t02/`, excluidos de Git y regenerables.
+
+## Simulador energético y heurística (T03)
+
+`simular(demanda, irradiancia, configuracion, *, estado_inicial=None,
+compromisos=None)` recorre horas consecutivas con FV, selección binaria de cargas
+y estado individual de cada batería. Usa la formulación física corregida de
+IDEA.md §4, con eficiencias, límites de energía/potencia y vertido explícitos.
+No garantiza el óptimo global ni representa la operación eléctrica dentro de la hora.
+
+Ejemplo reproducible de las primeras 48 horas de desarrollo, desde la raíz:
+
+```python
+from energy_project import cargar_caso
+from energy_project.simulador import simular
+
+caso = cargar_caso("scripts/configuracion.json")
+demanda = caso.demanda.loc[caso.demanda["t"] < 48]
+solar = caso.irradiancia_simulacion.loc[
+    caso.irradiancia_simulacion["t"] < 48, ["t", "ghi_w_m2"]
+]
+resultado = simular(demanda, solar, caso.configuracion)
+print(resultado["resumen"])
+
+# La continuación conserva estados y puede ejecutar un calendario ya decidido.
+primero = simular(demanda[demanda["t"] < 24], solar[solar["t"] < 24], caso.configuracion)
+continuacion = simular(
+    demanda[demanda["t"] >= 24], solar[solar["t"] >= 24], caso.configuracion,
+    estado_inicial=primero["estado_final"],
+    compromisos=resultado["cargas"].loc[
+        resultado["cargas"]["t"] >= 24, ["t", "carga_id", "x"]
+    ],
+)
+assert continuacion["estado_final"] == resultado["estado_final"]
+```
+
+La demanda conserva las columnas existentes: `t`, `carga_id`, `demanda_wh`,
+`solicitada`, `prioridad_supuesta` y `potencia_w_supuesta`. La irradiancia se suministra
+explícitamente con `t` y `ghi_w_m2`; no se consulta meteorología desde el simulador.
+La configuración es la validada por `cargar_caso`. Se rechazan horas faltantes,
+claves repetidas, valores inválidos y estados fuera de los límites individuales.
+
+`estado_inicial` es un diccionario `{bateria_id: energia_wh}`; si falta, se usan
+los estados configurados una sola vez al iniciar la llamada. `compromisos` debe
+cubrir exactamente todas las filas de demanda con `t`, `carga_id`, `x` binaria y
+`x <= solicitada`. Sin calendario se fija `x = z`; con calendario, un déficit
+puede dejar `z = 0` conservando `x`, sin activar cargas adicionales.
+
+El resultado es un diccionario de tablas y valores en memoria:
+
+- `cargas`: columnas originales, `x`, `z`, `comprometida_wh`, `atendida_wh` y `no_atendida_wh`.
+- `horas`: `t`, `fv_wh`, `solicitada_wh`, `comprometida_wh`, `atendida_wh`, `no_atendida_wh`, `potencia_atendida_w` y `vertido_wh`.
+- `baterias`: `t`, `bateria_id`, `inicial_wh`, `carga_wh`, `descarga_wh` y `final_wh`.
+- `estado_final`: diccionario de estados por batería para continuar la trayectoria.
+- `resumen`: energías totales, beneficio realizado `J` y fracción ponderada `S_pond` (`None` sin demanda ponderada).
+
+La selección ordena por prioridad y energía descendentes, con desempate por
+identificador ascendente. Se acepta una carga completa si cabe en energía y
+potencia nominal; después se despacha una sola vez, recorriendo baterías por
+identificador. Los presupuestos no se amplían por tolerancia. Las pruebas comprueban
+balances con tolerancia absoluta de `1e-6` Wh y límites individuales, incluidos
+casos manuales, baterías heterogéneas y el periodo completo de desarrollo.
+
+El simulador es determinista: reutiliza los datos, parámetros y semillas de T01
+sin introducir otra semilla. No escribe archivos ni añade un comando; la
+preparación permanece igual. Beta, escenarios, reservas y MPC siguen en T04.
 
 ## Configuración y regeneración
 
@@ -218,7 +283,8 @@ original en el repositorio.
 
 Los cinco CSV originales conservan su contenido. Se verifica conservación diaria
 con tolerancia de 0,001 Wh y capacidad por solicitud con holgura de 1e-6 Wh por
-redondeo. Las pruebas no validan todavía balances físicos ni resultados de control.
+redondeo. T03 verifica los balances físicos horarios; los resultados de control
+y la comparación beta/Chronos-2 siguen pendientes.
 Consultar `docs/datos.md` para datos/unidades y `docs/IDEA.md` para el protocolo
 experimental y las adaptaciones al [paper de Acuna et al.](https://doi.org/10.3390/en14102789).
 
