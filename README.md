@@ -52,6 +52,33 @@ no necesita red. Rechaza una demanda que no cabe en los horarios y potencias.
 Los datos y la semilla deben concordar: si cambian los supuestos de demanda,
 hay que regenerar explícitamente los derivados antes de validarlos.
 
+## Descarga solar opcional
+
+Para adquirir de nuevo la ventana completa de 2024–2025, sin reemplazar el
+snapshot publicado:
+
+```powershell
+uv run python -m energy_project.descarga --config scripts/configuracion.json
+```
+
+Se crea una carpeta nueva en `data/adquisiciones/<instanteUTC>/`, con
+`consulta.json`, `respuesta.json`, `metadatos.json` y los dos CSV solares.
+Los metadatos incluyen la URL exacta, fecha de adquisición, coordenadas solicitadas
+y devueltas, unidades y hashes. Se fija ERA5; no se usa Best Match. Una adquisición
+nueva no recupera la respuesta original ausente de los CSV heredados.
+
+Para un ensayo breve, con fin exclusivo y directorio de salida nuevo:
+
+```powershell
+uv run python -m energy_project.descarga --inicio 2025-01-06 --fin 2025-01-07 --salida results/solar_un_dia
+```
+
+Si la carpeta ya existe, el descargador falla sin sobrescribirla. Los intervalos
+normalizados conservan sus índices `t` respecto al inicio de la simulación; una
+descarga parcial es un ensayo y no sustituye la cobertura completa del caso.
+Los errores de red no producen CSV y las respuestas inválidas se conservan para
+diagnóstico. El comando de validación habitual sigue funcionando sin red.
+
 ## Uso desde Python
 
 ```python

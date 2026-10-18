@@ -182,7 +182,7 @@ Unidades explícitas; intervalos sin duplicados; cobertura; faltantes; no negati
 2. Calibración/desarrollo para elegir ventanas, evaluar cobertura, construir dependencia y fijar parámetros.
 3. Test final reservado, continuo y común.
 
-Se descargaron 17544 horas completas de 2024–2025, sin faltantes, negativos, duplicados ni saltos. El máximo registrado es 1083 W/m²; no se recortó a 1000. El repositorio conserva ese snapshot, pero no contiene su respuesta cruda original ni la consulta exacta utilizada. No se considera recuperada su trazabilidad original.
+Se descargaron 17544 horas completas de 2024–2025, sin faltantes, negativos, duplicados ni saltos. El máximo registrado es 1083 W/m²; no se recortó a 1000. El repositorio conserva ese snapshot, pero no contiene su respuesta cruda original ni la consulta exacta utilizada. El descargador opcional de HU-01 conserva respuesta, consulta, metadatos y hashes de cada adquisición nueva; no se considera recuperada la trazabilidad original del snapshot heredado.
 
 | Uso | Inicio inclusivo local | Fin exclusivo local | Horas |
 |---|---|---|---:|

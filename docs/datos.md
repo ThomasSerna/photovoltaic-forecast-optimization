@@ -23,6 +23,9 @@ Los siguientes archivos se encuentran en `data/`:
 `validacion.json` y `sha256.json` son salidas reproducibles del generador. Las
 fechas vacías de las lecturas y la duración real desconocida de sus intervalos
 son ausencias intencionales; no se rellenan con fechas de simulación.
+El manifiesto registra los bytes presentes al generar; Git puede convertir
+saltos de línea entre plataformas. La ingesta calcula los hashes actuales y la
+prueba de preservación compara contenido CSV, no sus saltos de línea.
 
 ## Origen y supuestos
 
@@ -117,3 +120,27 @@ se implementará en las siguientes historias según las correcciones y
 adaptaciones registradas en IDEA.md, secciones 3 y 7. HU-01 verifica datos y
 dominios de parámetros; no verifica aún balances FV/baterías ni satisfacción
 de demanda atendida.
+
+## Nuevas adquisiciones solares
+
+El descargador opcional `python -m energy_project.descarga`, ejecutado mediante
+uv, consulta [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
+con `models=era5`, `hourly=shortwave_radiation`, `timezone=GMT` y
+`timeformat=unixtime`. La radiación es el promedio de la **hora precedente**:
+el sello crudo indica su fin y se resta una hora para obtener el inicio. La
+consulta cubre el sello final necesario, incluido 2026-01-01 05:00 UTC para la
+última hora local de 2025. Esa conversión no se vuelve a aplicar al leer CSV.
+
+Cada adquisición escribe en un directorio nuevo: consulta exacta, bytes de la
+respuesta, metadatos de celda/procedencia y hashes, histórico normalizado y
+subconjunto de simulación. Las carpetas de adquisiciones y los informes se
+excluyen de Git por defecto; conservarlos si se usan en un experimento y registrar
+sus hashes. Cambiar de adquisición es una decisión explícita: no se sustituyen
+automáticamente las rutas del caso. Una descarga parcial no cumple la cobertura
+completa exigida por `cargar_caso`.
+
+La respuesta cruda original del snapshot heredado sigue sin estar disponible.
+No se exige que una consulta posterior produzca valores idénticos: se conserva
+como una nueva adquisición identificada. Las pruebas del descargador usan
+respuestas controladas sin red; además se verificó una descarga real de 24 horas
+del 6 de enero de 2025 en una carpeta temporal, sin tocar los CSV publicados.
