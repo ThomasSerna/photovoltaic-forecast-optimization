@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (18 de octubre de 2026):** **T01 completada** (preparación, generación, validación y configuración de datos). **T02–T05 pendientes.**  
+**Estado (18 de octubre de 2026):** **T01 y T02 completadas** (datos y pronósticos Chronos-2 verificados en CPU). **T03–T05 pendientes.**
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -32,7 +32,7 @@ Las expresiones impresas (4) y (9) del artículo presentan ambigüedades frente 
 
 ## 3. Datos existentes: T01 completada
 
-Se **reutiliza** el código, los CSV y la configuración ya publicados; no se reimplementa la ingesta. El comando actual prepara y valida datos, pero **todavía no simula energía ni ejecuta Chronos-2**.
+Se **reutiliza** el código, los CSV y la configuración ya publicados; no se reimplementa la ingesta. El comando de preparación `energy-project` valida datos, sin simular energía. El ensayo T02 ejecuta Chronos-2 mediante `python -m energy_project.pronosticos`, con el extra `pronosticos`; todavía no hay simulador energético.
 
 Datos principales en `data/`:
 
@@ -104,9 +104,9 @@ El orden y los desempates concretan ambigüedades del algoritmo publicado; son u
 
 **A — Beta:** ajustar irradiancia positiva por hora/franja local usando solamente observaciones anteriores al origen de predicción; tratar horas nocturnas y masas de cero por separado. Priorizar una beta de cuatro parámetros si el ajuste resulta estable; si es inestable, fijar **antes del test** una beta escalada de dos parámetros como adaptación explícita. No reutilizar parámetros meteorológicos del artículo como si fueran mediciones de Támesis.
 
-**B — Chronos-2:** usar el checkpoint oficial sin reentrenar ni ajustar pesos; cargarlo una sola vez, utilizar únicamente la historia disponible y emitir cuantiles para el horizonte. Valores iniciales: contexto **336 h**, horizonte **24 h** y cuantiles **0.1 a 0.9**. Verificar en una ejecución corta memoria, API y tiempo de inferencia; registrar versión y revisión del checkpoint.
+**B — Chronos-2:** usar el checkpoint oficial sin reentrenar ni ajustar pesos; cargarlo una sola vez, utilizar únicamente la historia disponible y emitir cuantiles para el horizonte. Valores iniciales: contexto **336 h**, horizonte **24 h** y cuantiles **0.1 a 0.9**. T02 verificó API, memoria y tiempo mediante dos orígenes de desarrollo y repetición del primero en CPU/FP32. Se fija `chronos-forecasting==2.3.2` y la revisión `29ec3766d36d6f73f0696f85560a422f50e8498c` de `amazon/chronos-2`; configuración, resultados, versiones y hashes se registran en el informe del ensayo. Se exige contexto consecutivo completo, sin interpolar horas no disponibles. Esto no sustituye el backtest de evaluación de T05.
 
-Los dos proveedores entregan **los mismos cuantiles para los mismos tiempos**. Se aplica una validación física común: no negatividad, noche solar, orden de cuantiles y límites plausibles; se reportan las correcciones. La mediana sirve como pronóstico puntual.
+Los dos proveedores entregan **los mismos cuantiles para los mismos tiempos**. Se aplica una corrección común: reordenar cruces, eliminar negativos y poner a cero intervalos completamente nocturnos según amanecer/ocaso calculados con Astral a partir de fecha y coordenadas. Se conservan los intervalos que cruzan esas fronteras y los pronósticos crudos; se reportan correcciones y rangos. Se supone horizonte sin obstáculos y observador a nivel del suelo. **No se impone techo superior artificial de GHI**: 1000 W/m² es referencia STC, no una cota física universal. La mediana sirve como pronóstico puntual. Esta política es una adaptación del proyecto, común a ambas ramas.
 
 **Escenarios temporalmente coherentes:** los cuantiles horarios por sí solos no son trayectorias conjuntas. Para evitar una infraestructura compleja, usar **una sola función compartida** que tome bloques históricos de 24 horas, transforme sus posiciones en rangos empíricos y aplique a ambos proveedores la función cuantil inversa correspondiente. Los mismos bloques, rangos y semillas se usan en A/B. Los extremos de las colas se fijan con una regla común de desarrollo y se documentan. Este muestreo aproxima la dependencia temporal; no equivale a una garantía de calibración conjunta.
 
@@ -154,7 +154,7 @@ El resultado principal es la **diferencia pareada B−A** en servicio bajo la mi
 
 **Criterio de éxito del trabajo:** ejecutar ambos métodos de extremo a extremo, respetar la física, mostrar resultados reproducibles y explicar si Chronos-2 aporta o no una mejora bajo estos supuestos. **No** es necesario que Chronos-2 gane.
 
-## 8. Implementación compacta: T01 ya está hecha
+## 8. Implementación compacta: T01 y T02 ya están hechas
 
 Conservar sin reescribir `data/`, `scripts/configuracion.json`, la ingesta/generación existente de `src/energy_project/` y sus pruebas actuales. No crear API, base de datos, interfaz web, framework de servicios ni abstracciones innecesarias.
 
@@ -162,7 +162,7 @@ Conservar sin reescribir `data/`, `scripts/configuracion.json`, la ingesta/gener
 
 ```text
 src/energy_project/
-├── pronosticos.py   # beta + Chronos-2 y cuantiles
+├── pronosticos.py   # Chronos-2 y cuantiles implementados; beta pendiente en T04
 ├── simulador.py     # FV, baterías, despacho y cargas
 ├── controlador.py   # escenarios y MPC compartido
 └── experimento.py   # ejecución A/B, métricas y gráficos
@@ -173,12 +173,12 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 | Tarea / issue de GitHub | Resultado mínimo verificable | Estado |
 |---|---|---|
 | **T01 — Datos** ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)) | CSV, demanda semisintética, configuración y validación reproducibles | **Completada** |
-| **T02 — Chronos-2** ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)) | Pronosticar 24 h a partir de historia válida y graficar frente a irradiancia real | Pendiente |
+| **T02 — Chronos-2** ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)) | Pronosticar 24 h a partir de historia válida y graficar frente a irradiancia real | **Completada** |
 | **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)) | Reproducir física por batería, heurística y restricciones en casos verificables | Pendiente |
 | **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | Pendiente |
 | **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | Pendiente |
 
-Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T02 puede iniciarse inmediatamente tras T01; T03 puede desarrollarse en paralelo; T04 integra ambos y T05 presenta el experimento final.
+Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T02 está verificada; T03 implementará la física, T04 integrará pronósticos y simulador, y T05 presentará el experimento final.
 
 ## 9. Entregables y límites
 

@@ -13,7 +13,7 @@ ni los pronósticos. El alcance matemático y el experimento se explican en
 ## Tareas del proyecto
 
 - **T01 — Preparación de datos:** completada ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)).
-- **T02 — Chronos-2:** núcleo implementado; ensayo pendiente ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
+- **T02 — Chronos-2:** completada y verificada en CPU ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
 - **T03 — Simulador energético y heurística:** pendiente ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)).
 - **T04 — Referencia beta y MPC compartido:** pendiente ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
 - **T05 — Comparación y resultados:** pendiente ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)).
@@ -87,6 +87,53 @@ Astral. Conserva las horas de transición, usa un horizonte sin obstáculos y no
 consulta irradiancia futura. No se aplica techo superior, ni siquiera 1000 W/m².
 Son adaptaciones del proyecto (IDEA.md §5); Chronos no reproduce las ecuaciones
 físicas del artículo ni las modifica. T03 y T04 implementarán física y MPC.
+
+El ensayo reproducible se ejecuta con:
+
+```powershell
+uv run --locked --extra pronosticos python -m energy_project.pronosticos
+uv run --locked --extra pronosticos pytest
+```
+
+`--config` permite elegir la configuración y `--salida` una **carpeta nueva**
+(por defecto `results/chronos_t02`). No sobrescribe resultados; para repetir,
+elegir por ejemplo `--salida results/chronos_t02_repeticion`. Una ejecución fallida
+puede dejar una carpeta incompleta: solo un `resumen.json` final acredita éxito.
+
+El ensayo emite dos horizontes desde el inicio de desarrollo y seis horas
+después (la separación usa `replanificacion`), y repite el primero con el mismo
+pipeline. Exige coincidencia con `rtol=1e-5`, `atol=1e-6`. Exporta:
+
+- `pronosticos.csv`: origen, intervalos UTC, referencia y todos los cuantiles
+  crudos (`crudo_q0.5`, etc.) y corregidos (`q0.5`, etc.), en W/m².
+- `pronostico.png`: primer horizonte, referencia ERA5, mediana y banda entre
+  cuantiles extremos; horas mostradas en America/Bogota.
+- `resumen.json`: MAE/RMSE global y diurno antes/después de corregir, tiempos,
+  muestras RSS en bytes, contexto usado, correcciones, rangos, configuración,
+  revisión, versiones, hardware y hashes de entradas, código y lock.
+
+La carga puede incluir la descarga inicial; el tiempo de cada inferencia
+incluye preparar y validar el contexto, pero excluye correcciones y gráficos.
+RSS se observa antes/después de cargar y tras cada una de las tres inferencias;
+su máximo observado **no es el pico continuo**. Los horizontes solapados cuentan
+como pronósticos distintos en las métricas. Las horas diurnas son las que no
+están completamente en noche astronómica; no se usa un umbral sobre la verdad.
+Si no hay horas diurnas, sus métricas son `null`.
+
+Este ensayo no toca la evaluación final ni demuestra mejora frente a beta.
+Se mantiene `available_at = fin_intervalo` como idealización de ERA5; tampoco
+se garantiza que el preentrenamiento no incluyera datos semejantes. Las pruebas
+usan dobles sin pesos ni red; las que requieren extras se omiten en la
+instalación básica de T01.
+
+Ensayo real verificado el **18 de octubre de 2026**, con el lock publicado:
+dos orígenes de desarrollo, 48 pronósticos horarios (26 diurnos), repetición
+coincidente y 160 pruebas aprobadas. MAE global crudo **35,30 W/m²**, corregido
+**34,07 W/m²**; MAE diurno corregido **62,91 W/m²**. Inferencias de **0,13–0,34 s**,
+carga inicial de **237,37 s** (incluye descarga/importación) y RSS máxima observada
+de **839,09 MiB**, en CPU AMD64/FP32 con 16 procesadores lógicos. Son cifras del
+ensayo corto de esta máquina, no rendimiento general ni comparación con beta.
+Los artefactos quedan en `results/chronos_t02/`, excluidos de Git y regenerables.
 
 ## Configuración y regeneración
 

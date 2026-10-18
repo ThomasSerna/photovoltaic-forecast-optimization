@@ -127,3 +127,176 @@ def corregir_cuantiles(tabla, configuracion):
         "valores_corregidos": int(np.count_nonzero(crudos != corregidos)),
     }
     return pd.DataFrame(corregidos, index=tabla.index, columns=tabla.columns), diagnostico
+
+
+
+
+def _metricas_pronostico(pronostico, real, diurno):
+    """Errores puntuales de la mediana; ambos orígenes cuentan por separado."""
+    error = np.asarray(pronostico) - np.asarray(real)
+    resultado = {}
+    for nombre, mascara in (("global", np.ones(len(error), dtype=bool)), ("diurno", diurno)):
+        errores = error[mascara]
+        resultado[nombre] = {
+            "horas": len(errores),
+            "mae_w_m2": float(np.abs(errores).mean()) if len(errores) else None,
+            "rmse_w_m2": float(np.sqrt(np.mean(errores ** 2))) if len(errores) else None,
+        }
+    return resultado
+
+
+def _graficar_pronostico(tabla, real, salida):
+    """Primer horizonte: observado, mediana y banda entre cuantiles extremos."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.dates import DateFormatter
+
+    indice = tabla.index.tz_convert("America/Bogota")
+    figura, eje = plt.subplots(figsize=(10, 4))
+    eje.fill_between(indice, tabla.iloc[:, 0], tabla.iloc[:, -1], alpha=0.2,
+                     label=f"Cuantiles {tabla.columns[0]:g}–{tabla.columns[-1]:g}")
+    eje.plot(indice, tabla[0.5], label="Chronos-2: mediana")
+    eje.plot(indice, real, label="ERA5: referencia")
+    eje.set(xlabel="Hora local (America/Bogota)", ylabel="GHI media horaria (W/m²)")
+    eje.xaxis.set_major_formatter(DateFormatter("%d/%m %H:%M", tz=indice.tz))
+    eje.legend()
+    figura.autofmt_xdate()
+    figura.tight_layout()
+    figura.savefig(salida, dpi=150)
+    plt.close(figura)
+
+
+def ensayo_chronos(caso, salida):
+    """Dos orígenes de desarrollo y repetición del primero; no ejecuta el test final."""
+    import importlib.metadata
+    import json
+    import os
+    from pathlib import Path
+    import platform
+    from time import perf_counter
+
+    import psutil
+
+    from .cli import codigo_sha256, entradas_sha256, entorno, sha256_de
+
+    config = caso.configuracion
+    opciones = config["pronosticos"]
+    salida = Path(salida).resolve()
+    if any(salida == ruta.resolve() for ruta in caso.rutas.values()):
+        raise ValueError("salida: no puede reemplazar una entrada")
+    salida.mkdir(parents=True, exist_ok=False)
+    numero(config["horizonte"], "horizonte", minimo=1, maximo=1024, entero=True)
+    validar_cuantiles(opciones["cuantiles"])
+    origen = pd.Timestamp(config["periodos"]["desarrollo"]["inicio"]).tz_convert("UTC")
+    origenes = [origen, origen + pd.Timedelta(hours=config["replanificacion"])]
+    if origenes[-1] + pd.Timedelta(hours=config["horizonte"]) > pd.Timestamp(config["periodos"]["desarrollo"]["fin"]):
+        raise ValueError("horizonte: el ensayo debe permanecer dentro de desarrollo")
+    contextos = [contexto_admisible(caso.irradiancia_historica, actual, opciones["contexto"]) for actual in origenes]
+    proceso = psutil.Process()
+    memoria = [proceso.memory_info().rss]
+    inicio = perf_counter()
+    pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
+    carga_s = perf_counter() - inicio
+    memoria.append(proceso.memory_info().rss)
+    crudos, corregidos, reales, diurnos, filas, ejecuciones = [], [], [], [], [], []
+    for actual in origenes + [origen]:
+        inicio = perf_counter()
+        crudo = pronosticar_chronos(
+            pipeline, caso.irradiancia_historica, actual, contexto=opciones["contexto"],
+            horizonte=config["horizonte"], cuantiles=opciones["cuantiles"],
+        )
+        duracion = perf_counter() - inicio
+        memoria.append(proceso.memory_info().rss)
+        if not np.isfinite(crudo.to_numpy()).all():
+            raise ValueError("Chronos-2: la inferencia contiene valores no finitos")
+        if len(crudos) == 2:
+            repetible = crudo.index.equals(crudos[0].index) and crudo.columns.equals(crudos[0].columns)
+            if not repetible or not np.allclose(crudo, crudos[0], rtol=1e-5, atol=1e-6):
+                raise ValueError("Chronos-2: la repetición del primer origen no coincide")
+            repeticion_s = duracion
+            break
+        corregido, correcciones = corregir_cuantiles(crudo, config)
+        real = caso.irradiancia_simulacion.set_index("inicio_utc")["ghi_w_m2"].reindex(crudo.index)
+        if not np.isfinite(real.to_numpy()).all():
+            raise ValueError("referencia: falta irradiancia realizada para el horizonte")
+        diurno = ~mascara_noche(crudo.index, config)
+        contexto = contextos[len(crudos)]
+        ejecuciones.append({
+            "origen_utc": actual.isoformat(), "inferencia_s": duracion,
+            "contexto_horas": len(contexto),
+            "contexto_primero_utc": contexto["inicio_utc"].iloc[0].isoformat(),
+            "contexto_ultimo_fin_utc": contexto["fin_utc"].iloc[-1].isoformat(),
+            "correcciones": correcciones,
+            "rango_crudo_w_m2": [float(crudo.to_numpy().min()), float(crudo.to_numpy().max())],
+            "rango_corregido_w_m2": [float(corregido.to_numpy().min()), float(corregido.to_numpy().max())],
+        })
+        tabla = pd.DataFrame({"origen_utc": actual.isoformat(), "inicio_utc": crudo.index,
+                              "fin_utc": crudo.index + pd.Timedelta(hours=1),
+                              "ghi_real_w_m2": real.to_numpy()})
+        for cuantil in crudo.columns:
+            tabla[f"crudo_q{cuantil}"] = crudo[cuantil].to_numpy()
+            tabla[f"q{cuantil}"] = corregido[cuantil].to_numpy()
+        filas.append(tabla)
+        crudos.append(crudo)
+        corregidos.append(corregido)
+        reales.append(real.to_numpy())
+        diurnos.append(diurno)
+    versiones = entorno()
+    for paquete in ("chronos-forecasting", "torch", "transformers", "huggingface-hub",
+                    "numpy", "astral", "matplotlib", "psutil"):
+        versiones[paquete] = importlib.metadata.version(paquete)
+    resumen = {
+        "alcance": "ensayo de desarrollo; métricas descriptivas con horizontes solapados, no backtest final",
+        "checkpoint": "amazon/chronos-2", "revision": opciones["revision"],
+        "contexto": opciones["contexto"], "horizonte": config["horizonte"],
+        "cuantiles": opciones["cuantiles"], "dispositivo": str(pipeline.model.device),
+        "configuracion": {campo: config[campo] for campo in (
+            "sitio", "latitud", "longitud", "zona_horaria", "horizonte", "replanificacion", "pronosticos")},
+        "dtype": str(pipeline.model.dtype), "carga_s": carga_s,
+        "rss_muestras_bytes": memoria, "rss_max_observado_bytes": max(memoria),
+        "ejecuciones": ejecuciones,
+        "repeticion": {"coincide": True, "inferencia_s": repeticion_s, "rtol": 1e-5, "atol": 1e-6},
+        "metricas": {
+            nombre: _metricas_pronostico(pd.concat(tablas)[0.5].to_numpy(),
+                                         np.concatenate(reales), np.concatenate(diurnos))
+            for nombre, tablas in (("crudo", crudos), ("corregido", corregidos))
+        },
+        "entradas_sha256": entradas_sha256(caso.rutas), "codigo_sha256": codigo_sha256(),
+        "entorno": versiones,
+        "uv_lock_sha256": sha256_de(Path(__file__).resolve().parents[2] / "uv.lock"),
+        "hardware": {"arquitectura": platform.machine(), "procesador": platform.processor(),
+                     "cpu_logicos": os.cpu_count(), "ram_total_bytes": psutil.virtual_memory().total},
+        "supuestos": ["ERA5: reanálisis, disponible idealmente al cierre de la hora",
+                      "Chronos-2 zero-shot; no se garantiza ausencia de datos semejantes en preentrenamiento",
+                      "Astral: horizonte sin obstáculos; cero solo en intervalos completamente nocturnos; sin techo GHI",
+                      "carga_s puede incluir descarga inicial de pesos; inferencia_s incluye preparación del contexto",
+                      "RSS muestreada entre operaciones; no es el pico continuo de memoria"],
+    }
+    pd.concat(filas, ignore_index=True).to_csv(salida / "pronosticos.csv", index=False)
+    _graficar_pronostico(corregidos[0], reales[0], salida / "pronostico.png")
+    (salida / "resumen.json").write_text(json.dumps(resumen, ensure_ascii=False, indent=2,
+                                                   allow_nan=False) + "\n", encoding="utf-8")
+    return resumen
+
+
+def main():
+    import argparse
+    from pathlib import Path
+
+    from .datos import cargar_caso
+
+    parser = argparse.ArgumentParser(description="Ensayo reproducible de Chronos-2 con dos orígenes de desarrollo")
+    parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
+    parser.add_argument("--salida", type=Path, default=Path("results/chronos_t02"))
+    args = parser.parse_args()
+    try:
+        ensayo_chronos(cargar_caso(args.config), args.salida)
+    except (OSError, ValueError, ImportError, RuntimeError, KeyError, TypeError) as error:
+        parser.exit(1, f"Error: {error}\nLa salida {args.salida} puede estar incompleta; no es un resultado válido.\n")
+    print(args.salida.resolve())
+
+
+if __name__ == "__main__":
+    main()
