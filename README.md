@@ -1,9 +1,25 @@
 # Proyecto de optimización 1
 
-Preparación reproducible de un caso fotovoltaico semisintético para el Centro
-Educativo Rural El Rayo, Támesis. **HU-01 implementada:** ingesta, demanda,
-configuración y validación. La física, el despacho, los pronósticos y el MPC
-corresponden a las siguientes historias; este comando aún no simula su operación.
+Investigación computacional de planificación fotovoltaica aislada en un caso
+semisintético contextualizado en el Centro Educativo Rural El Rayo, Támesis:
+**referencia beta vs. pronósticos de Chronos-2**, con el mismo simulador físico
+y controlador MPC heurístico.
+
+**T01 completada:** datos, demanda sintética, configuración y validación.
+El comando de preparación descrito abajo todavía **no ejecuta el simulador**
+ni los pronósticos. El alcance matemático y el experimento se explican en
+[docs/IDEA.md](docs/IDEA.md).
+
+## Tareas del proyecto
+
+- **T01 — Preparación de datos:** completada ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)).
+- **T02 — Chronos-2:** pendiente ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
+- **T03 — Simulador energético y heurística:** pendiente ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)).
+- **T04 — Referencia beta y MPC compartido:** pendiente ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
+- **T05 — Comparación y resultados:** pendiente ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)).
+
+El objetivo es simplificar el código y la arquitectura, **sin simplificar
+las ecuaciones ni las restricciones físicas del modelo**.
 
 ## Instalación y ejecución
 
