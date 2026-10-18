@@ -1,0 +1,14 @@
+id,nombre,cantidad,fuente_hoja,fuente_fila,potencia_w_supuesta,inicio_h,fin_h,ocupacion_base_supuesta,prioridad_supuesta,permanente,estado_parametros
+nevera_01,Nevera Samsung RL4363SBABS,1,ANTERIOR,13,150,0,24,0.5,3,True,supuestos_no_medidos
+arrocera_01,Olla arrocera Universal,1,ANTERIOR,17,1000,9,12.5,0.5,2,False,supuestos_no_medidos
+licuadora_01,Licuadora Oster,1,ANTERIOR,18,600,10,10.25,1,2,False,supuestos_no_medidos
+tv_01,Televisor Kalley 32 pulgadas,1,ANTERIOR,92,90,7,12.5,0.45,2,False,supuestos_no_medidos
+tv_02,Televisor Caixun 43 pulgadas,1,ANTERIOR,93,120,7,12.5,0.45,2,False,supuestos_no_medidos
+tv_03,Televisor OLG 43 pulgadas,1,ANTERIOR,94,120,7,12.5,0.45,2,False,supuestos_no_medidos
+bafle_01,"Bafle SWNN SP 3212D, estado REGULAR",1,ANTERIOR,95,80,9,10,0.5,1,False,supuestos_no_medidos
+ventilador_01,Ventilador de pared 1,1,ANTERIOR,96,80,7,12.5,0.75,1,False,supuestos_no_medidos
+ventilador_02,Ventilador de pared 2,1,ANTERIOR,96,80,7,12.5,0.75,1,False,supuestos_no_medidos
+ventilador_03,Ventilador de pared 3,1,ANTERIOR,96,80,7,12.5,0.75,1,False,supuestos_no_medidos
+ventilador_04,Ventilador de pared 4,1,ANTERIOR,96,80,7,12.5,0.75,1,False,supuestos_no_medidos
+ventilador_05,Ventilador de pared 5,1,ANTERIOR,96,80,7,12.5,0.75,1,False,supuestos_no_medidos
+ventilador_06,Ventilador de pared 6,1,ANTERIOR,96,80,7,12.5,0.75,1,False,supuestos_no_medidos

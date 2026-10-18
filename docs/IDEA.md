@@ -474,7 +474,3 @@ Consultadas para esta revisión el 17 de octubre de 2026, hora de Colombia.
 10. Schefzik, R., Thorarinsdottir, T. L. y Gneiting, T. (2013). [Uncertainty Quantification in Complex Simulation Models Using Ensemble Copula Coupling](https://arxiv.org/abs/1302.7149). Sustenta la distinción entre marginales y dependencia; la variante concreta descrita aquí usa rangos históricos compartidos.
 
 Las reservas, la selección de cuatro candidatos, el supuesto de demanda programada y el protocolo común son propuestas de este proyecto, no resultados demostrados por estas fuentes.
-
-## 20. Próxima acción concreta
-
-Comenzar con HU-01 a HU-04 y el ensayo corto de compatibilidad de Chronos-2. Incorporar el archivo de consumo diario para validar sus magnitudes y seleccionar el punto meteorológico. Con esos datos se cierra la configuración física; mientras tanto solo se usan ejemplos sintéticos identificados.
