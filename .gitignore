@@ -1,3 +1,28 @@
 .idea/
 .vscode/
 .env
+
+.venv/
+venv/
+env/
+
+# Archivos compilados y cachés de Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Cobertura de pruebas
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Distribución y metadatos de paquetes
+build/
+dist/
+*.egg-info/
+
+# Archivos temporales de Jupyter
+.ipynb_checkpoints/
