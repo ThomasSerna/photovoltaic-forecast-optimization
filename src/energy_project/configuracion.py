@@ -16,6 +16,8 @@ CLASES_INICIO_H = 7
 CLASES_FIN_H = 12.5
 DIAS_LECTIVOS = [0, 1, 2, 3, 4]  # índices de DIAS_SEMANA: lunes a viernes
 DIAS_SEMANA = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+DIAS_POR_SEMANA = len(DIAS_SEMANA)
+HORAS_DIA = 24
 HORAS_CON_CLASE = range(CLASES_INICIO_H, math.ceil(CLASES_FIN_H))  # 7..12: horas que cruzan las clases
 ID_NEVERA = "nevera_01"  # única carga permanente a la que se asigna energía
 
@@ -117,10 +119,10 @@ def _validar_ventana_de_uso(carga, campo):
     """Ventana [inicio_h, fin_h) en horas del día: 24 h para la nevera; dentro de las clases para las demás."""
     numero(carga["inicio_h"], f"{campo}.inicio_h")
     numero(carga["fin_h"], f"{campo}.fin_h", estricto=True)
-    if not carga["inicio_h"] < carga["fin_h"] <= 24:
+    if not carga["inicio_h"] < carga["fin_h"] <= HORAS_DIA:
         raise ValueError(f"{campo}: ventana inválida [inicio_h, fin_h)")
     if carga["permanente"]:
-        if carga["inicio_h"] != 0 or carga["fin_h"] != 24:
+        if carga["inicio_h"] != 0 or carga["fin_h"] != HORAS_DIA:
             raise ValueError(f"{campo}: la nevera debe estar disponible las 24 h")
     elif not CLASES_INICIO_H <= carga["inicio_h"] < carga["fin_h"] <= CLASES_FIN_H:
         raise ValueError(f"{campo}: ventana fuera de clases de 07:00 a 12:30")
