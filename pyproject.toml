@@ -9,6 +9,16 @@ description = "Preparación reproducible del caso energético semisintético de 
 requires-python = ">=3.12,<3.13"
 dependencies = ["pandas>=2.2", "tzdata"]
 
+[project.optional-dependencies]
+pronosticos = [
+    "chronos-forecasting==2.3.2",
+    "torch>=2.2,<3",
+    "numpy>=1.26",
+    "matplotlib>=3.9",
+    "astral>=3.2,<4",
+    "psutil>=5.9",
+]
+
 [dependency-groups]
 dev = ["pytest>=8"]
 

@@ -13,7 +13,7 @@ ni los pronósticos. El alcance matemático y el experimento se explican en
 ## Tareas del proyecto
 
 - **T01 — Preparación de datos:** completada ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)).
-- **T02 — Chronos-2:** pendiente ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
+- **T02 — Chronos-2:** núcleo implementado; ensayo pendiente ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
 - **T03 — Simulador energético y heurística:** pendiente ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)).
 - **T04 — Referencia beta y MPC compartido:** pendiente ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
 - **T05 — Comparación y resultados:** pendiente ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)).
@@ -41,6 +41,52 @@ El comando comprueba los nueve CSV y muestra un resumen; además escribe
 informe. Incluye conteos, periodos, semillas, supuestos, configuración física,
 versiones y hashes de entradas y código. Una inconsistencia produce un error con
 archivo/campo y código de salida 1; la ingesta no repara ni sobrescribe entradas.
+
+## Núcleo de pronóstico (T02)
+
+Las dependencias de Chronos son opcionales; la preparación de T01 conserva su
+instalación básica. Para usar el pronóstico local:
+
+```powershell
+uv sync --locked --extra pronosticos
+```
+
+```python
+from energy_project import cargar_caso
+from energy_project.pronosticos import cargar_chronos, pronosticar_chronos, corregir_cuantiles
+
+caso = cargar_caso("scripts/configuracion.json")
+opciones = caso.configuracion["pronosticos"]
+pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
+crudos = pronosticar_chronos(
+    pipeline, caso.irradiancia_historica,
+    caso.configuracion["periodos"]["desarrollo"]["inicio"],
+    contexto=opciones["contexto"], horizonte=caso.configuracion["horizonte"],
+    cuantiles=opciones["cuantiles"],
+)
+cuantiles, correcciones = corregir_cuantiles(crudos, caso.configuracion)
+```
+
+Se usa `amazon/chronos-2`, sin ajuste de pesos, fijado al commit
+`29ec3766d36d6f73f0696f85560a422f50e8498c`, con CPU y FP32 por defecto.
+El pipeline se carga una sola vez y se reutiliza entre orígenes. La primera
+carga necesita descargar pesos públicos; las siguientes utilizan la caché de
+Hugging Face. No hacen falta claves de API.
+
+La interfaz compartida con la futura beta es una tabla de cuantiles en W/m²:
+índice horario `inicio_utc` con zona UTC y columnas numéricas de probabilidad.
+La columna `0.5` es la mediana. Se exige contexto completo, terminado y disponible;
+no se interpolan huecos. El primer intervalo pronosticado empieza en el origen.
+Los límites son contexto 1–8192 h, horizonte 1–1024 h y cuantiles crecientes
+en [0.01, 0.99], incluyendo 0.5. Otros niveles pueden interpolarse por la
+biblioteca oficial; los nueve deciles iniciales son nativos.
+
+La corrección común conserva los crudos: reordena cruces, elimina negativos y
+pone a cero solo horas completamente fuera de amanecer–ocaso calculados con
+Astral. Conserva las horas de transición, usa un horizonte sin obstáculos y no
+consulta irradiancia futura. No se aplica techo superior, ni siquiera 1000 W/m².
+Son adaptaciones del proyecto (IDEA.md §5); Chronos no reproduce las ecuaciones
+físicas del artículo ni las modifica. T03 y T04 implementarán física y MPC.
 
 ## Configuración y regeneración
 
