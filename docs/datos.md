@@ -47,6 +47,77 @@ inventariadas están pendientes de confirmación.
 La irradiancia proviene de **ERA5 mediante Open-Meteo**. Es una referencia
 de reanálisis de la celda cercana a la escuela, no una medición local.
 
+## Modelo de la demanda sintética
+
+La demanda sintética es una adaptación del proyecto (IDEA.md, sección 2.2), no una ecuación
+del paper. Su código está en `src/energy_project/demanda.py`. Las ecuaciones se numeran (D1)–(D5)
+para no confundirlas con las (1)–(10) del paper. Notación: `d` es el día desde 0 (lunes), `h` la
+hora local, `t = 24d + h`, `K` el conjunto de las 13 cargas, `nev` la nevera (la única permanente)
+y `K' = K∖{nev}`. De cada carga `k` se usan la potencia `P_k` (W), la ventana de uso
+`[a_k, b_k)` (h) y la ocupación base `o_k`; `L_j` son las cinco lecturas enteras del medidor (kWh).
+
+\[
+\text{(D1)}\quad D^{\mathrm{ref}}_i = 1000\,(L_{i+1}-L_i)\ \text{Wh},\ i=1,\dots,4;\qquad
+D_d=\begin{cases}D^{\mathrm{ref}}_{i_d}\,m_d & \text{día lectivo},\\ D^{\mathrm{nev}}_d & \text{fin de semana,}\end{cases}
+\]
+
+con `i_d` uniforme entre 1 y 4 (con reemplazo) y `m_d ~ U[0,95; 1,05]` (`variacion_lectiva`).
+
+\[
+\text{(D2)}\quad D^{\mathrm{nev}}_d=1800\,u_d,\ u_d\sim U[0{,}9;\,1{,}1];\qquad
+D_{\mathrm{nev},t}=D^{\mathrm{nev}}_d\,\frac{g_h}{\sum_{j=0}^{23}g_j},\quad g_h=\nu_h\,\varepsilon_{d,h},
+\]
+
+con `ε ~ U[0,9; 1,1]` y `ν_h = 0,8` si `h < 7` o `h ≥ 19`, y `1` en otro caso. Con 2160 Wh/día y
+sin ruido, cada hora nocturna recibe 80 Wh y cada hora diurna, 100 Wh.
+
+\[
+\text{(D3)}\quad \ell_{k,h}=\max\{0,\ \min(h+1,b_k)-\max(h,a_k)\},\qquad
+D^{\max}_{k,h}=P_k\,\ell_{k,h},\qquad \omega_{k,h}=o_k\,\xi_{d,k,h},
+\]
+
+con `ξ ~ U[0,85; 1,15]`. Solo cuentan las franjas `(k, h)` de cargas no permanentes con `ℓ > 0`, y
+solo en días lectivos; `ℓ` es el número de horas de la franja `[h, h+1)` dentro de la ventana de uso.
+
+\[
+\text{(D4)}\quad D_{k,h}(\kappa)=D^{\max}_{k,h}\,\min\{1,\ \kappa\,\omega_{k,h}\},\qquad
+\sum_{k\in K',\,h}D_{k,h}(\kappa_d)=D_d-D^{\mathrm{nev}}_d .
+\]
+
+La suma crece con `κ`, así que `κ_d` se busca por bisección en `[0, 100]` con 90 iteraciones.
+Existe solución si `0 ≤ D_d − D^nev_d ≤ Σ D^max`; si no, el generador falla: no recorta la demanda
+ni añade cargas ocultas. En fin de semana solo hay nevera y `κ_d = 0`.
+
+\[
+\text{(D5)}\quad 0\le D_{k,t}\le P_k\,\ell^{\mathrm{disp}}_{k,t}+10^{-6}\ \text{Wh},\qquad
+\Big|\sum_{t\in d}\sum_{k}D_{k,t}-D_d\Big|\le 0{,}001\ \text{Wh}.
+\]
+
+`ℓ^disp` vale 1 para la nevera, 0 para las demás cargas en fin de semana y `ℓ_{k,h}` en días
+lectivos. La energía de cada carga y hora se redondea a 6 decimales; el total de cada hora, también,
+antes de acumularse en el del día.
+
+| Ecuación | Función |
+|---|---|
+| (D1) `D^ref` | `referencias_del_medidor` |
+| (D1) `i_d`, `m_d`, `D_d`; (D2) `u_d`, `D^nev_d` | `sortear_objetivo` (devuelve `ObjetivoDia`) |
+| (D2) `D_nev,t` | `perfil_nevera` |
+| (D3) `ℓ` | `horas_solapadas`, `horas_disponibles` |
+| (D3) `D^max`, `ω` | `franjas_de_uso` (devuelve `Franja`) |
+| (D4) `D_{k,h}(κ)` | `energia_franja` |
+| (D4) `κ_d` | `factor_de_asignacion` |
+| Reparto de un día | `energia_del_dia` |
+| (D5) | `comprobar_limites`, `comprobar_conservacion` |
+| Filas de los CSV | `filas_carga_hora`, `filas_del_dia`, `fila_diaria`, `generar_demanda` |
+
+Los sorteos de cada día siguen siempre este orden: `i_d`, `m_d` (solo días lectivos), `u_d`,
+`ε_{d,0..23}` y `ξ_{d,k,h}` (solo días lectivos; cargas en el orden del catálogo y `h` creciente).
+Cambiarlo altera todos los datos de cada semilla. Los supuestos fijos del código (0,8, el horario
+nocturno, los rangos de ruido, la cota y las iteraciones de la bisección, las tolerancias y los
+decimales) están nombrados en la sección «Supuestos fijos del modelo» de `demanda.py`; los demás
+parámetros vienen de `scripts/configuracion.json`. `tests/test_demanda.py` comprueba a mano (D1)–(D4)
+y el orden de los sorteos con casos pequeños.
+
 ## Periodo y alineación
 
 La simulación comprende del **6 de enero al 30 de marzo de 2025**:

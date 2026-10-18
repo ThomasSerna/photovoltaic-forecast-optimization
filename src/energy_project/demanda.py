@@ -68,7 +68,7 @@ TOLERANCIA_CONSERVACION_WH = 0.001  # máxima diferencia entre la suma de las ho
 # --- 3. Horas disponibles de cada carga ---
 
 def horas_solapadas(hora, inicio_h, fin_h):
-    """Horas (de 0 a 1) de la franja [hora, hora + 1) que caen dentro de la ventana [inicio_h, fin_h)."""
+    """Horas ℓ (de 0 a 1) de la franja [hora, hora + 1) que caen dentro de la ventana [inicio_h, fin_h): ecuación (D3)."""
     return max(0., min(hora + 1., fin_h) - max(float(hora), inicio_h))
 
 
@@ -88,7 +88,7 @@ def horas_disponibles(carga, hora, lectivo):
 # --- 4. Objetivo de energía del día ---
 
 def referencias_del_medidor(lecturas):
-    """Energía D^ref_i (Wh) entre lecturas consecutivas del medidor: los intervalos I1 a I4."""
+    """Energía D^ref_i (Wh) entre lecturas consecutivas del medidor, los intervalos I1 a I4: ecuación (D1)."""
     return [WH_POR_KWH * (fin["entero_kwh"] - inicio["entero_kwh"])
             for inicio, fin in zip(lecturas, lecturas[1:])]
 
@@ -113,6 +113,7 @@ def sortear_objetivo(lectivo, referencias_wh, config, rng):
     - Día lectivo: una referencia i_d al azar (con reemplazo), D_d = D^ref_{i_d}·m_d y m_d ~ U(variacion_lectiva).
     - Fin de semana: D_d = D^nev_d.
     En ambos casos D^nev_d = nevera_wh_dia·u_d, con u_d ~ U(variacion_nevera), se sortea al final.
+    Ecuaciones (D1) y (D2) de docs/datos.md.
     """
     indice = rng.randrange(len(referencias_wh)) if lectivo else None
     multiplicador = rng.uniform(*config["variacion_lectiva"]) if lectivo else None
@@ -129,7 +130,7 @@ def perfil_nevera(nevera_dia_wh, rng):
     """Reparte la energía diaria de la nevera (Wh) entre las 24 horas, en proporción a g_h = ν_h·ε_h.
 
     ν_h vale PESO_NOCTURNO_NEVERA de noche (19:00 a 07:00) y 1 de día; ε_h es un ruido uniforme
-    en RUIDO_NEVERA. Consume HORAS_DIA sorteos, uno por hora.
+    en RUIDO_NEVERA. Consume HORAS_DIA sorteos, uno por hora. Ecuación (D2).
     """
     pesos = []
     for hora in range(HORAS_DIA):
@@ -140,7 +141,7 @@ def perfil_nevera(nevera_dia_wh, rng):
 
 
 class Franja(NamedTuple):
-    """Franja carga-hora de un día lectivo en la que una carga no permanente puede funcionar."""
+    """Franja carga-hora de un día lectivo en la que una carga no permanente puede funcionar: ecuación (D3)."""
 
     carga_id: str
     hora: int  # hora local h: la franja es [h, h + 1)
@@ -168,7 +169,7 @@ def franjas_de_uso(cargas, rng):
 
 
 def energia_franja(franja, factor):
-    """Energía asignada a una franja (Wh): D_{k,h}(κ) = D^max_{k,h}·min(1, κ·ω_{k,h})."""
+    """Energía asignada a una franja (Wh): D_{k,h}(κ) = D^max_{k,h}·min(1, κ·ω_{k,h}), ecuación (D4)."""
     return franja.capacidad_wh * min(1., factor * franja.peso)
 
 
@@ -177,7 +178,7 @@ def factor_de_asignacion(franjas, objetivo_wh):
 
     La energía asignada no decrece al aumentar κ, así que este se busca por bisección en
     [0, FACTOR_MAXIMO] con ITERACIONES_BISECCION iteraciones y se devuelve el último punto medio.
-    Falla si el objetivo es negativo o supera la capacidad total.
+    Falla si el objetivo es negativo o supera la capacidad total. Ecuación (D4).
     """
     capacidad_total_wh = sum(franja.capacidad_wh for franja in franjas)
     if not 0 <= objetivo_wh <= capacidad_total_wh:
@@ -216,7 +217,7 @@ def energia_del_dia(cargas, lectivo, objetivo, rng):
 # --- 6. Filas publicadas y generación del horizonte ---
 
 def comprobar_limites(t, carga, demanda_wh, horas, en_clase):
-    """Falla si la demanda de una carga-hora supera potencia × horas disponibles o cae fuera de clases."""
+    """Falla si la demanda de una carga-hora supera potencia × horas disponibles o cae fuera de clases (D5)."""
     capacidad_wh = carga["potencia_w_supuesta"] * horas
     if not 0 <= demanda_wh <= capacidad_wh + TOLERANCIA_REDONDEO_WH:
         raise ValueError(f"demanda: t={t}, carga={carga['id']}: {demanda_wh} Wh fuera de potencia × horas disponibles")
@@ -283,7 +284,7 @@ def filas_del_dia(dia, lectivo, energia, config):
 
 
 def comprobar_conservacion(dia, total_dia_wh, objetivo_wh):
-    """Falla si la suma de las horas del día d se aparta del objetivo D_d más de la tolerancia."""
+    """Falla si la suma de las horas del día d se aparta del objetivo D_d más de la tolerancia (D5)."""
     if abs(total_dia_wh - objetivo_wh) > TOLERANCIA_CONSERVACION_WH:
         raise ValueError(f"demanda: día {dia + 1}: total {total_dia_wh} Wh no conserva objetivo {objetivo_wh} Wh "
                          f"(tolerancia {TOLERANCIA_CONSERVACION_WH} Wh)")
