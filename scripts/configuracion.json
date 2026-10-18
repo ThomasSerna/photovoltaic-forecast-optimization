@@ -1,0 +1,245 @@
+{
+  "version": "0.1-provisional",
+  "sitio": "Centro Educativo Rural El Rayo, Támesis, Antioquia",
+  "latitud": 5.5610705,
+  "longitud": -75.8092448,
+  "zona_horaria": "America/Bogota",
+  "fecha_inicio_sintetica": null,
+  "fechas_mediciones_confirmadas": false,
+  "horas_mediciones_confirmadas": false,
+  "resolucion_h": 1,
+  "clases_inicio_h": 7,
+  "clases_fin_h": 12.5,
+  "dias_lectivos": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "semanas": 12,
+  "semanas_desarrollo": 8,
+  "semilla": 20261018,
+  "variacion_lectiva": [
+    0.95,
+    1.05
+  ],
+  "nevera_wh_dia": 1800,
+  "variacion_nevera": [
+    0.9,
+    1.1
+  ],
+  "hoja_inventario_elegida": "ANTERIOR",
+  "fecha_hoja_elegida": "2026-07-31",
+  "politica_calendario": "semana relativa; todos lunes-viernes lectivos; sin festivos ni vacaciones",
+  "demanda_conocida_mpc": "programacion sintetica exogena comun a ambos modelos; supuesto experimental",
+  "pv": null,
+  "baterias": null,
+  "irradiancia": null,
+  "lecturas": [
+    {
+      "dia": "lunes",
+      "entero_kwh": 36075
+    },
+    {
+      "dia": "martes",
+      "entero_kwh": 36082
+    },
+    {
+      "dia": "miercoles",
+      "entero_kwh": 36087
+    },
+    {
+      "dia": "jueves",
+      "entero_kwh": 36096
+    },
+    {
+      "dia": "viernes",
+      "entero_kwh": 36103
+    }
+  ],
+  "cargas": [
+    {
+      "id": "nevera_01",
+      "nombre": "Nevera Samsung RL4363SBABS",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 13,
+      "potencia_w_supuesta": 150,
+      "inicio_h": 0,
+      "fin_h": 24,
+      "ocupacion_base_supuesta": 0.5,
+      "prioridad_supuesta": 3,
+      "permanente": true,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "arrocera_01",
+      "nombre": "Olla arrocera Universal",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 17,
+      "potencia_w_supuesta": 1000,
+      "inicio_h": 9,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.5,
+      "prioridad_supuesta": 2,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "licuadora_01",
+      "nombre": "Licuadora Oster",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 18,
+      "potencia_w_supuesta": 600,
+      "inicio_h": 10,
+      "fin_h": 10.25,
+      "ocupacion_base_supuesta": 1,
+      "prioridad_supuesta": 2,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "tv_01",
+      "nombre": "Televisor Kalley 32 pulgadas",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 92,
+      "potencia_w_supuesta": 90,
+      "inicio_h": 7,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.45,
+      "prioridad_supuesta": 2,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "tv_02",
+      "nombre": "Televisor Caixun 43 pulgadas",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 93,
+      "potencia_w_supuesta": 120,
+      "inicio_h": 7,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.45,
+      "prioridad_supuesta": 2,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "tv_03",
+      "nombre": "Televisor OLG 43 pulgadas",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 94,
+      "potencia_w_supuesta": 120,
+      "inicio_h": 7,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.45,
+      "prioridad_supuesta": 2,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "bafle_01",
+      "nombre": "Bafle SWNN SP 3212D, estado REGULAR",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 95,
+      "potencia_w_supuesta": 80,
+      "inicio_h": 9,
+      "fin_h": 10,
+      "ocupacion_base_supuesta": 0.5,
+      "prioridad_supuesta": 1,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "ventilador_01",
+      "nombre": "Ventilador de pared 1",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 96,
+      "potencia_w_supuesta": 80,
+      "inicio_h": 7,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.75,
+      "prioridad_supuesta": 1,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "ventilador_02",
+      "nombre": "Ventilador de pared 2",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 96,
+      "potencia_w_supuesta": 80,
+      "inicio_h": 7,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.75,
+      "prioridad_supuesta": 1,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "ventilador_03",
+      "nombre": "Ventilador de pared 3",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 96,
+      "potencia_w_supuesta": 80,
+      "inicio_h": 7,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.75,
+      "prioridad_supuesta": 1,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "ventilador_04",
+      "nombre": "Ventilador de pared 4",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 96,
+      "potencia_w_supuesta": 80,
+      "inicio_h": 7,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.75,
+      "prioridad_supuesta": 1,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "ventilador_05",
+      "nombre": "Ventilador de pared 5",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 96,
+      "potencia_w_supuesta": 80,
+      "inicio_h": 7,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.75,
+      "prioridad_supuesta": 1,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    },
+    {
+      "id": "ventilador_06",
+      "nombre": "Ventilador de pared 6",
+      "cantidad": 1,
+      "fuente_hoja": "ANTERIOR",
+      "fuente_fila": 96,
+      "potencia_w_supuesta": 80,
+      "inicio_h": 7,
+      "fin_h": 12.5,
+      "ocupacion_base_supuesta": 0.75,
+      "prioridad_supuesta": 1,
+      "permanente": false,
+      "estado_parametros": "supuestos_no_medidos"
+    }
+  ]
+}
