@@ -2,9 +2,9 @@
 
 ## Valor de los pronósticos de Chronos-2 en la planificación energética fotovoltaica con MPC heurístico
 
-**Caso:** simulación de un sistema fotovoltaico aislado hipotético, contextualizado en una escuela rural de Támesis, Antioquia.  
-**Versión:** 2, revisión del 17 de octubre de 2026, hora de Colombia.  
-**Estado:** protocolo recomendado para implementar. No contiene resultados experimentales ni certifica que los datos escolares hayan sido verificados.  
+**Caso:** simulación de un sistema fotovoltaico aislado hipotético, contextualizado en el Centro Educativo Rural El Rayo, Támesis, Antioquia (5.5610705, -75.8092448).  
+**Versión:** 4, revisión del 18 de octubre de 2026, hora de Colombia: restricciones individuales por batería y datos preparados.  
+**Estado:** datos preparados y publicados en el repositorio; implementación del simulador pendiente. Las comprobaciones de datos no son resultados de comparación de controladores. Potencias, prioridades e infraestructura son supuestos por validar.  
 **Alcance:** investigación computacional; no instalación física, estudio económico ni diagnóstico de electrificación de la escuela.
 
 **Pregunta:** manteniendo el mismo sistema físico, demanda, generador de trayectorias y controlador, ¿cambia la satisfacción ponderada de demanda cuando las distribuciones de irradiancia basadas en beta se sustituyen por pronósticos de Chronos-2?
@@ -42,12 +42,36 @@ La contribución consiste en evaluar el valor de la información predictiva para
 
 | Elemento | Condición en este protocolo |
 |---|---|
-| Consumo diario escolar | La propuesta original declara disponer de registros de pocas semanas; no se adjuntaron en esta revisión y deben auditarse |
-| Demanda horaria y por dispositivo | Sintética, construida con plantillas y un catálogo hipotético |
-| Irradiancia histórica | Por obtener; será referencia de un producto meteorológico, no medición en la escuela |
+| Lecturas escolares | Cinco fotos de un medidor acumulativo; cuatro diferencias provisionales de 7, 5, 9 y 7 kWh. Fechas, horas y décimas pendientes; no son cinco consumos diarios confirmados |
+| Demanda horaria y por dispositivo | Sintética: 84 días, 2016 horas y 26208 registros carga-hora; 13 cargas individuales basadas en el inventario |
+| Irradiancia histórica | Descargada de Open-Meteo/ERA5: 17544 horas completas de 2024–2025; referencia de reanálisis, no medición local |
 | Infraestructura, prioridades y estado inicial | Supuestos de simulación |
 | Pronósticos | Salidas de los dos métodos; nunca sustituyen la referencia usada para evaluar |
 | Resultados operativos reales | No disponibles |
+
+### Datos preparados y supuestos actuales
+
+Se usa provisionalmente la hoja `ANTERIOR`, fechada el 31 de julio de 2026; la hoja `ACTUAL` es de noviembre de 2023 y no se suma. El catálogo contiene una nevera, una arrocera, una licuadora, tres televisores, un bafle y seis ventiladores individuales. Los portátiles reportados como dañados se excluyen. La iluminación y otras posibles cargas no inventariadas están pendientes de confirmar.
+
+Clases de lunes a viernes, 07:00–12:30. De 12:00 a 13:00 solo hay media hora lectiva. Fuera de clases y los fines de semana se modela únicamente la nevera. Su consumo base supuesto es 1.8 kWh/día, con variación uniforme de ±10%; no se deduce del medidor. Las potencias, prioridades y ventanas de uso también son supuestas, no especificaciones de placa verificadas.
+
+La parte entera transcrita del medidor es 36075, 36082, 36087, 36096 y 36103 kWh. Se omiten las décimas inciertas: el cambio lunes–viernes queda entre 27 y 29 kWh, sin incluir extremos, si las partes enteras son correctas. Los 28 kWh centrales equivalen a unos 7 kWh/24 h únicamente bajo el supuesto de cuatro intervalos de 24 horas. Los rangos expresan incertidumbre por décimas omitidas, no intervalos estadísticos de confianza.
+
+La realización sintética usa semilla 20261018. En días lectivos muestrea con reemplazo una de las cuatro diferencias de referencia y aplica una variación uniforme de ±5%. Se separa la energía de la nevera y se distribuye el resto entre cargas-hora mediante pesos y un factor ajustado por bisección, respetando la capacidad `potencia × horas disponibles`. Si no puede conservarse el objetivo diario sin exceder límites, el generador falla; no recorta la demanda ni añade cargas ocultas. No se infieren efectos propios de cada día de semana con solo cuatro intervalos.
+
+La distribución entre equipos es una asignación sintética posible, no desagregación medida. Los CSV usan Wh con decimales para conciliar cálculos, sin atribuir esa precisión a las observaciones. Todas las semanas simuladas proceden de la misma referencia: la evaluación no es validación independiente con nuevos consumos reales.
+
+| Archivo en `data/` | Función |
+|---|---|
+| `catalogo_cargas.csv` | Equipos, potencias, horarios y prioridades supuestos |
+| `demanda_por_carga.csv` | Solicitudes energéticas individuales por hora |
+| `irradiancia_historica.csv` | Historial para ambos pronosticadores; se filtra por origen |
+| `irradiancia_simulacion.csv` | Subconjunto solar usado como realización de referencia |
+| `calendario_simulacion.csv` | Correspondencia entre `t` y fechas asignadas |
+
+El catálogo se relaciona por `id` con `carga_id`; calendario, demanda y simulación solar se relacionan por `t`. El CSV solar de simulación está contenido en el histórico y no se concatena con él. Al unir una hora solar con varias cargas no se suma la irradiancia repetida por equipo. `solicitada` no significa comprometida ni atendida.
+
+Los cinco CSV se verificaron contra los archivos preparados, con equivalencia de contenido salvo saltos de línea. La validación incluyó alineación temporal, conservación diaria, límites de demanda por carga y horarios; no valida todavía restricciones FV/baterías, heurística ni MPC. Ver `docs/datos.md`.
 
 ### 2.1. Demanda conocida como supuesto del experimento
 
@@ -66,7 +90,7 @@ w_{d,t}\geq0,\qquad \sum_{t\in d}w_{d,t}=1,\qquad
 D_{d,t}=D_dw_{d,t}.
 \]
 
-Se usan plantillas lectivas y no lectivas. El catálogo por dispositivos debe conciliar con ese total. Si la combinación de equipos binarios y horas de uso no permite reproducirlo, se informa el residuo o se añade una carga de fondo explícita. No se cambian arbitrariamente las potencias nominales para aparentar mediciones por equipo.
+Se usan plantillas lectivas y no lectivas. El catálogo por dispositivos debe conciliar con ese total. La preparación actual conserva el total mediante tiempos equivalentes de uso acotados; la decisión posterior de atender cada solicitud es binaria. Si un objetivo no cabe en las potencias y ventanas supuestas, se informa la incompatibilidad y se revisan los supuestos; no se añade una carga residual oculta. No se cambian arbitrariamente las potencias nominales para aparentar mediciones por equipo.
 
 El consumo medido es energía efectivamente utilizada, y no identifica por sí solo necesidades no atendidas, demanda latente ni aparatos. El proyecto lo adopta como **proxy de demanda**, con esa limitación.
 
@@ -136,15 +160,15 @@ No se necesita webapp, base de datos, Django ni LangGraph. Un comando reproducib
 
 ## 6. Meteorología, tiempo y validación
 
-**Fuente inicial:** Open-Meteo Historical Weather API [6], seleccionando y fijando el producto meteorológico. NASA POWER [7] queda como alternativa si la cobertura es insuficiente.
+**Fuente utilizada:** Open-Meteo Historical Weather API [6], con el modelo ERA5 fijado explícitamente, sin Best Match. Se solicitaron las coordenadas 5.5610705, -75.8092448; la API devuelve la celda 5.5, -75.75, de resolución aproximada 0.25°. La elevación devuelta no se trata como medición del sitio. NASA POWER [7] queda como alternativa si la cobertura es insuficiente.
 
 La documentación de Open-Meteo describe datos de reanálisis y shortwave_radiation como promedio de la hora precedente. NASA POWER ofrece UTC y hora solar local; se solicitará UTC para evitar confundir esta última con America/Bogota. Se conservarán unidad y metadatos originales [6,7].
 
 ### 6.1. Convención temporal
 
-Cada registro normalizado tiene interval_start, interval_end y available_at, además de valor, unidad, fuente y bandera de calidad. Una observación puede entrar al contexto solo cuando su intervalo terminó y su fecha de disponibilidad no supera el origen del pronóstico.
+Los CSV actuales tienen `inicio_intervalo`, `fin_intervalo`, `inicio_utc`, `fin_utc`, `duracion_h`, `ghi_w_m2`, fuente, modelo y partición. La ingesta debe normalizar estos campos y construir `available_at` conforme a la hipótesis declarada; no afirmar que esa columna ya existe. Se restó una hora al sello de la API para obtener el inicio del intervalo precedente, por lo que no debe desplazarse nuevamente. Una observación puede entrar al contexto solo cuando su intervalo terminó y su fecha de disponibilidad no supera el origen del pronóstico.
 
-Cuando no exista información de publicación histórica, se declara **disponibilidad idealizada de la observación pasada**. Un reanálisis retrospectivo puede incorporar información y revisiones posteriores; usarlo como referencia no demuestra desempeño de un sistema en tiempo real.
+En este backtest se adopta explícitamente **disponibilidad idealizada de la observación pasada**, con `available_at = fin_intervalo`. ERA5 se publica con retraso (aproximadamente cinco días según la documentación); esta hipótesis no reproduce esa disponibilidad operativa. Un reanálisis retrospectivo puede incorporar información y revisiones posteriores; usarlo como referencia no demuestra desempeño de un sistema en tiempo real.
 
 Se almacenan tiempos inequívocos en UTC y se interpretan calendario escolar y franjas solares en America/Bogota. La máscara nocturna usa el intervalo completo: una hora que contiene amanecer no es enteramente nocturna.
 
@@ -158,7 +182,16 @@ Unidades explícitas; intervalos sin duplicados; cobertura; faltantes; no negati
 2. Calibración/desarrollo para elegir ventanas, evaluar cobertura, construir dependencia y fijar parámetros.
 3. Test final reservado, continuo y común.
 
-Se buscará al menos un año de historia y varias semanas de desarrollo y test si la fuente lo permite. Las fechas se fijan después de auditar cobertura, antes de examinar comparaciones finales. Con menos datos se reduce el alcance inferencial.
+Se descargaron 17544 horas completas de 2024–2025, sin faltantes, negativos, duplicados ni saltos. El máximo registrado es 1083 W/m²; no se recortó a 1000. Se conservan respuesta original, consulta exacta, metadatos y script en el paquete de datos preparado; deben incorporarse al repositorio para completar la trazabilidad.
+
+| Uso | Inicio inclusivo local | Fin exclusivo local | Horas |
+|---|---|---|---:|
+| Historial previo | 2024-01-01 00:00 | 2025-01-06 00:00 | 8904 |
+| Desarrollo | 2025-01-06 00:00 | 2025-03-03 00:00 | 1344 |
+| Evaluación | 2025-03-03 00:00 | 2025-03-31 00:00 | 672 |
+| Reserva no usada | 2025-03-31 00:00 | 2026-01-01 00:00 | 6624 |
+
+Las 12 semanas comienzan el lunes 6 de enero y terminan el domingo 30 de marzo de 2025. Son fechas asignadas a la demanda sintética, no fechas del medidor. Se conserva un calendario simplificado sin festivos ni vacaciones. La reserva no se utiliza para elegir retrospectivamente periodos donde gane un modelo. La evaluación de cuatro semanas será exploratoria y no demuestra desempeño anual.
 
 En el test se permite añadir al contexto los valores pasados que ya terminaron. No se permite retocar hiperparámetros, perfiles, tamaños FV o la biblioteca de calibración al observar quién gana.
 
@@ -166,7 +199,7 @@ En el test se permite añadir al contexto los valores pasados que ya terminaron.
 
 ### 7.1. Variables y unidades
 
-Se propone un banco agregado de baterías para el MVP. Su equivalencia es una simplificación de un conjunto homogéneo; no modela desbalances entre baterías.
+Se representa explícitamente cada batería b del conjunto B, conservando sus estados y límites individuales. No se sustituye este modelo por una batería agregada que pueda ocultar restricciones. A y B comparten la misma formulación y los mismos parámetros físicos.
 
 | Símbolo | Significado | Unidad |
 |---|---|---|
@@ -174,12 +207,12 @@ Se propone un banco agregado de baterías para el MVP. Su equivalencia es una si
 | D_(k,t) | Energía solicitada por una carga | Wh |
 | r_(k,t) | Solicitud de uso | 0/1 |
 | x_(k,t) | Compromiso planificado | 0/1 |
-| z_(k,t) | Atención realizada del intervalo en el modelo agregado | 0/1 |
+| z_(k,t) | Atención realizada del intervalo en la simulación horaria | 0/1 |
 | p_(k,t) | Peso de prioridad | Adimensional |
 | G_t | Irradiancia media | W/m² |
 | E_t^PV | Energía FV disponible en el bus de cargas | Wh |
-| c_t, d_t, v_t | Carga de batería, descarga al bus y vertido | Wh |
-| C_t | Energía almacenada al inicio | Wh |
+| c_(b,t), d_(b,t), v_t | Carga y descarga al bus de cada batería b; vertido del sistema | Wh |
+| C_(b,t) | Energía almacenada al inicio en cada batería b | Wh |
 
 Se exige 0≤z_(k,t)≤x_(k,t)≤r_(k,t). La energía atendida es D_(k,t)z_(k,t). No se confunde energía comprometida con energía efectivamente servida.
 
@@ -197,26 +230,31 @@ La potencia nominal ya representa conversión eléctrica; no se multiplica otra 
 
 Una versión con inclinación, transposición y temperatura puede usar pvlib [8]. Sería común a A y B; no se necesita para el primer experimento.
 
-### 7.3. Balance del bus y batería
+### 7.3. Balance del bus y restricciones por batería
 
 \[
-\sum_k D_{k,t}z_{k,t}+c_t+v_t=E_t^{PV}+d_t,
+\sum_k D_{k,t}z_{k,t}+\sum_{b\in B}c_{b,t}+v_t
+=E_t^{PV}+\sum_{b\in B}d_{b,t},
 \qquad
-C_{t+1}=C_t+\eta_c c_t-\frac{d_t}{\eta_d}.
+C_{b,t+1}=C_{b,t}+\eta_{c,b}c_{b,t}-\frac{d_{b,t}}{\eta_{d,b}}.
 \]
 
 \[
-C_{\min}\le C_t\le C_{\max},\quad c_t,d_t,v_t\ge0,
+C_{b,\min}\le C_{b,t}\le C_{b,\max},\quad c_{b,t},d_{b,t},v_t\ge0,
 \]
 
 \[
-c_t\le\min\left(P_{c,\max}\Delta t,
-\frac{C_{\max}-C_t}{\eta_c}\right),\qquad
-d_t\le\min\left(P_{d,\max}\Delta t,
-\eta_d(C_t-C_{\min})\right).
+c_{b,t}\le\min\left(P_{c,b,\max}\Delta t,
+\frac{C_{b,\max}-C_{b,t}}{\eta_{c,b}}\right),\qquad
+d_{b,t}\le\min\left(P_{d,b,\max}\Delta t,
+\eta_{d,b}(C_{b,t}-C_{b,\min})\right).
 \]
 
-No se permite carga y descarga simultánea del banco. Se especifica si los límites de potencia están medidos en el bus o en la batería; estas ecuaciones usan límites en el bus. También se impone la capacidad de suministro a cargas P_bus,max·Δt. Se empieza con flujos de un bus equivalente; no es un diseño eléctrico detallado.
+Estas restricciones se aplican a cada batería y periodo, incluidos los estados finales. Se prohíbe carga y descarga simultánea de una misma batería. La carga procede del excedente FV y la descarga atiende el déficit de las cargas; no se introducen transferencias entre baterías.
+
+Se especifica si los límites de potencia están medidos en el bus o en la batería; estas ecuaciones usan límites en el bus. También se impone la capacidad de suministro a cargas P_bus,max·Δt. Un bus común no elimina los estados, flujos ni restricciones individuales.
+
+La implementación mantendrá una correspondencia verificable con las restricciones del paper: habilitación de descarga (1)-(3), límite de entrega (4), evolución de estado (5), disponibilidad de energía (6), capacidad máxima (7), presupuesto de cargas (8) y solicitud de encendido (9). Las correcciones justificadas de (4) y (9) indicadas en la sección 3 preservan su intención física; no se presentan como equivalencia algebraica con las expresiones ambiguas impresas. Se documentará cualquier otra diferencia antes de utilizarla.
 
 ### 7.4. Objetivo energético
 
@@ -228,7 +266,7 @@ S_{\mathrm{pond}}=\frac{J}{\sum_{t,k}p_{k,t}D_{k,t}}.
 
 Si el denominador es cero se informa no aplicable. Se usan prioridades iniciales 1, 2 y 3. Un peso 3 no garantiza prioridad absoluta frente a cualquier cantidad de energía de peso 1: el objetivo pondera energía. Por eso se mide por separado el servicio de cargas declaradas críticas.
 
-No se exige C_final=C_inicial como restricción dura: en episodios de escasez podría ser inviable. Se reporta el estado final y se incluye el tratamiento terminal de la sección 11.
+No se exige C_(b,final)=C_(b,inicial) como restricción dura: en episodios de escasez podría ser inviable. Se reporta el estado final y se incluye el tratamiento terminal de la sección 11.
 
 ## 8. Heurística compartida y corrección de ejecución
 
@@ -236,16 +274,16 @@ No se exige C_final=C_inicial como restricción dura: en episodios de escasez po
 
 Para cada intervalo de un candidato:
 
-1. Calcular generación prevista y energía útil de batería.
+1. Calcular generación prevista y energía útil individual de cada batería.
 2. Ordenar únicamente las cargas solicitadas.
 3. Admitir cada carga si cabe completa en el presupuesto y respeta los límites.
-4. Aplicar, para cargas no críticas, la reserva operativa del candidato.
-5. Calcular los flujos a partir de las cargas efectivamente seleccionadas.
-6. Cargar excedentes y contabilizar vertido; actualizar batería una sola vez.
+4. Aplicar, para cargas no críticas, la reserva operativa del candidato a cada batería.
+5. Calcular los flujos a partir de las cargas efectivamente seleccionadas y distribuirlos entre baterías mediante un orden determinístico documentado, respetando cada límite.
+6. Cargar excedentes y contabilizar vertido; actualizar cada batería una sola vez.
 
-La prioridad 3 puede utilizar energía por encima del mínimo físico aunque exista una reserva operativa para las otras cargas. La reserva no representa energía adicional ni permite violar C_min.
+La prioridad 3 puede utilizar energía por encima del mínimo físico de cada batería aunque exista una reserva operativa para las otras cargas. La reserva no representa energía adicional ni permite violar C_(b,min).
 
-**Ejecución común:** dado un compromiso fijo y la generación realizada, se atienden las cargas comprometidas por el mismo orden mientras sea físicamente posible; se desconectan las restantes. No se añaden nuevas cargas fuera del plan antes de replanificar. La batería se actualiza con lo realmente atendido.
+**Ejecución común:** dado un compromiso fijo y la generación realizada, se atienden las cargas comprometidas por el mismo orden mientras sea físicamente posible; se desconectan las restantes. No se añaden nuevas cargas fuera del plan antes de replanificar. Cada batería se actualiza con sus flujos realizados una sola vez.
 
 El replay horario utiliza una corrección ideal dentro del intervalo. Es una aproximación agregada de protección y corte de cargas; no demuestra continuidad de servicio segundo a segundo, transitorios, arranques ni tiempos reales de desconexión. La irradiancia realizada nunca entra a la función que construye el compromiso anterior.
 
@@ -272,6 +310,8 @@ Se utilizará el checkpoint oficial amazon/chronos-2, sin ajustar pesos. La docu
 El objetivo inicial es GHI horaria. Se comienza sin variables meteorológicas futuras. Los hiperparámetros propuestos son contexto de 336 horas, horizonte de 24 horas y cuantiles 0.1, 0.2, ..., 0.9; se validan antes de congelar el experimento.
 
 El modelo se carga una vez y se ejecuta una vez por origen. Se fija la revisión del checkpoint y las versiones instaladas. Zero-shot significa que el proyecto no ajusta sus pesos; no prueba que ninguna serie similar estuviera en el preentrenamiento. Se informa esa limitación y se prefieren, si hay cobertura, fechas posteriores a la publicación del checkpoint.
+
+El periodo principal de 2025 no garantiza ser posterior al preentrenamiento/publicación de Chronos-2. El estudio evalúa integración zero-shot sin ajuste de pesos, no demuestra ausencia de exposición durante preentrenamiento. Una evaluación posterior al checkpoint exige un periodo adicional predefinido y coherente.
 
 Se conservan salidas originales y procesadas. La corrección común impone no negatividad, máscara nocturna y monotonía cuantílica; registra cuánto cambia cada salida. La mediana se usa como predicción puntual para ambos métodos.
 
@@ -306,7 +346,7 @@ El MPC planifica un horizonte, ejecuta una parte y vuelve a planificar con el es
 | Replanificación R | 6 intervalos |
 | Escenarios N | 50 |
 | Reservas candidatas ρ | 0, 0.25, 0.50 y 0.75 de la capacidad utilizable |
-| Reserva operativa | C_min + ρ(C_max-C_min), solo para cargas no críticas |
+| Reserva operativa por batería | C_(b,min) + ρ(C_(b,max)-C_(b,min)), solo para cargas no críticas |
 | Valor terminal λ_T | Inicialmente 0.5 veces la prioridad mínima; fijar en desarrollo |
 
 R=6 es control por bloques, con corrección física horaria. R=1 queda como sensibilidad si el costo de inferencia lo permite. Estos valores son propuestas, no parámetros estimados.
@@ -328,7 +368,7 @@ El criterio interno es:
 \[
 \mathrm{Score}(a)=\frac{1}{N}\sum_{s=1}^{N}
 \left[\sum_{h,k}p_{k,h}D_{k,h}z^{(s,a)}_{k,h}
-+\lambda_T\eta_d\big(C_H^{(s,a)}-C_{\min}\big)\right].
++\lambda_T\sum_{b\in B}\eta_{d,b}\big(C_{b,H}^{(s,a)}-C_{b,\min}\big)\right].
 \]
 
 El valor terminal evita tratar toda energía restante como inútil al cerrar el horizonte. Es una extensión al objetivo del paper y no una garantía de estabilidad. Se reporta separado de la métrica principal J, que mide solo energía atendida. No se interpreta Score como ahorro económico.
@@ -410,11 +450,21 @@ La redacción de método y literatura empieza durante la implementación. El ens
 
 Si hay retrasos, se recortan covariables, interfaz y sensibilidades; se conserva una comparación completa de A y B, física, trazabilidad temporal y resultados honestos.
 
-## 14. Historias de usuario
+## 14. Historias de usuario de desarrollo
 
-El archivo HISTORIAS_USUARIO.md contiene 18 historias propuestas, con actor, prioridad, dificultad, dependencias y criterios verificables. Son historias para investigadores y desarrolladores del simulador; no presuponen usuarios escolares usando una aplicación.
+El backlog consta de siete issues en [ThomasSerna/proyecto-optimizacion](https://github.com/ThomasSerna/proyecto-optimizacion/issues), todos asignados a ThomasSerna:
 
-Los primeros cierres útiles son entorno reproducible, auditoría de consumo, meteorología, protocolo temporal, demanda y física. El backlog queda listo para trasladar a GitHub una vez identificado el repositorio y ajustado el reparto del equipo.
+| Historia | Alcance |
+|---|---|
+| [HU-01](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1) | Preparar datos y configurar la simulación |
+| [HU-02](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2) | Implementar modelo energético y restricciones individuales |
+| [HU-03](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3) | Implementar despacho y selección de cargas |
+| [HU-04](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4) | Implementar referencia beta |
+| [HU-05](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5) | Integrar Chronos-2 |
+| [HU-06](https://github.com/ThomasSerna/proyecto-optimizacion/issues/6) | Implementar MPC compartido |
+| [HU-07](https://github.com/ThomasSerna/proyecto-optimizacion/issues/7) | Ejecutar y comparar ambos modelos |
+
+HU-01 está parcialmente avanzada por la preparación de CSV y documentación. Faltan ingesta ejecutable, validaciones en código, configuración FV y por batería, semillas, cortes temporales e instrucciones de instalación y ejecución. Tener archivos en `data/` no completa la historia. El generador y la respuesta original disponibles en los paquetes deben conservarse con rutas documentadas. Las pruebas pertinentes se incluyen dentro de cada funcionalidad; artículo y exposición son entregables académicos fuera del backlog de desarrollo.
 
 ## 15. Dependencias y reproducibilidad
 
@@ -447,7 +497,9 @@ No hacen falta solver MILP, entrenamiento del modelo ni infraestructura en la nu
 
 **Definido en esta versión propuesta:** dos ramas; GHI como única variable pronosticada inicial; demanda programada; Chronos sin ajuste de pesos; física, trayectorias y MPC compartidos; reserva anticipatoria y selección esperada; sin MILP; simulación horaria.
 
-**Debe resolverse al recibir/auditar los datos:** archivo y unidades de consumo; ubicación meteorológica; periodos; catálogo; potencia FV; capacidad y límites de batería; estado inicial; soporte beta; límites de irradiancia; ventanas; tolerancias y hardware.
+**Resuelto provisionalmente:** ubicación, fuente ERA5, periodo histórico, calendario semisintético, catálogo de 13 cargas y archivos de demanda e irradiancia.
+
+**Pendiente:** fechas/horas/décimas del medidor, equipos operativos e iluminación, potencias y consumo permanente; dimensionamiento FV, cada batería con capacidad, mínimos, máximos, límites de potencia, eficiencias y estado inicial; soporte beta, límite operativo de cuantiles, ventanas, tolerancias, versiones y prueba de hardware. Estos parámetros deben fijarse con desarrollo, sin consultar el resultado comparativo del test.
 
 El protocolo registra quién fijó cada parámetro, con qué datos y antes de qué ejecución. Los valores iniciales recomendados no se presentan como calibración terminada.
 
