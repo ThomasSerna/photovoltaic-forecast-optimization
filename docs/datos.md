@@ -49,7 +49,7 @@ de reanálisis de la celda cercana a la escuela, no una medición local.
 
 ## Modelo de la demanda sintética
 
-La demanda sintética es una adaptación del proyecto (IDEA.md, sección 2.2), no una ecuación
+La demanda sintética es una adaptación del proyecto (IDEA.md, sección 3), no una ecuación
 del paper. Su código está en `src/energy_project/demanda.py`. Las ecuaciones se numeran (D1)–(D5)
 para no confundirlas con las (1)–(10) del paper. Notación: `d` es el día desde 0 (lunes), `h` la
 hora local, `t = 24d + h`, `K` el conjunto de las 13 cargas, `nev` la nevera (la única permanente)
