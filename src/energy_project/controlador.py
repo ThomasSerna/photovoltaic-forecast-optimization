@@ -334,6 +334,7 @@ def main():
     import importlib.metadata
     import json
     from pathlib import Path
+    from tempfile import NamedTemporaryFile
     from time import perf_counter
 
     from .cli import codigo_sha256, entradas_sha256, entorno, sha256_de
@@ -384,10 +385,13 @@ def main():
         texto = json.dumps(informe, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
         if codigo_sha256() != codigo_antes or entradas_sha256(caso.rutas) != entradas_antes:
             raise ValueError("calibración: cambiaron entradas o código durante el ensayo")
-        temporal_config = args.config.with_name(args.config.name + ".t04.tmp")
+        temporal_config = None
         temporal_informe = salida / "resumen.json.tmp"
         ruta_informe = salida / "resumen.json"
         try:
+            with NamedTemporaryFile(dir=args.config.parent, prefix=args.config.name + ".t04.",
+                                    suffix=".tmp", delete=False) as archivo:
+                temporal_config = Path(archivo.name)
             temporal_config.write_text(
                 json.dumps(config, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
             temporal_informe.write_text(texto, encoding="utf-8")
@@ -399,7 +403,8 @@ def main():
                 ruta_informe.unlink()
                 raise
         finally:
-            temporal_config.unlink(missing_ok=True)
+            if temporal_config is not None:
+                temporal_config.unlink(missing_ok=True)
             temporal_informe.unlink(missing_ok=True)
     except (OSError, ValueError, ImportError, RuntimeError, KeyError, TypeError) as error:
         parser.exit(1, f"Error: {error}\nLa salida {args.salida} puede estar incompleta; no es válida.\n")

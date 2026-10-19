@@ -156,14 +156,14 @@ def publicacion(tmp_path, monkeypatch):
 ])
 def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(publicacion, monkeypatch, fallo):
     _, config, salida, original = publicacion
-    temporal_config = config.with_name(config.name + ".t04.tmp")
     temporal_informe = salida / "resumen.json.tmp"
     if fallo.startswith("escritura"):
         escribir = Path.write_text
-        ruta_fallida = temporal_config if fallo == "escritura_configuracion" else temporal_informe
 
         def fallar_escritura(ruta, *args, **kwargs):
-            if ruta == ruta_fallida:
+            fallar = (ruta.match(config.name + ".t04.*.tmp") if fallo == "escritura_configuracion"
+                      else ruta == temporal_informe)
+            if fallar:
                 escribir(ruta, "archivo parcial", encoding="utf-8")
                 raise OSError("escritura fallida")
             return escribir(ruta, *args, **kwargs)
@@ -171,10 +171,11 @@ def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(publi
         monkeypatch.setattr(Path, "write_text", fallar_escritura)
     elif fallo.startswith("reemplazo"):
         reemplazar = Path.replace
-        ruta_fallida = temporal_config if fallo == "reemplazo_configuracion" else temporal_informe
 
         def fallar_reemplazo(ruta, destino):
-            if ruta == ruta_fallida:
+            fallar = (ruta.match(config.name + ".t04.*.tmp") if fallo == "reemplazo_configuracion"
+                      else ruta == temporal_informe)
+            if fallar:
                 raise OSError("reemplazo fallido")
             return reemplazar(ruta, destino)
 
@@ -187,7 +188,7 @@ def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(publi
     assert error.value.code == 1
     assert not (salida / "resumen.json").exists()
     assert config.read_bytes() == original
-    assert not temporal_config.exists()
+    assert not list(config.parent.glob(config.name + ".t04.*.tmp"))
     assert not temporal_informe.exists()
 
 
@@ -200,5 +201,32 @@ def test_calibracion_exitosa_publica_informe_y_configuracion_coherentes(publicac
     assert informe["configuracion"] == actualizada
     assert informe["configuracion_entrada"] == caso.configuracion == json.loads(original)
     assert informe["entradas_sha256"]["configuracion"]["sha256"] == hashlib.sha256(original).hexdigest()
-    assert not config.with_name(config.name + ".t04.tmp").exists()
+    assert not list(config.parent.glob(config.name + ".t04.*.tmp"))
     assert not (salida / "resumen.json.tmp").exists()
+
+
+@pytest.mark.parametrize("fallo", [False, True])
+def test_publicacion_conserva_entrada_con_el_antiguo_nombre_temporal(publicacion, monkeypatch, fallo):
+    caso, config, salida, original = publicacion
+    sidecar = config.with_name(config.name + ".t04.tmp")
+    contenido = b"datos preexistentes que no deben modificarse\n"
+    sidecar.write_bytes(contenido)
+    caso.rutas["entrada_sidecar"] = sidecar
+    if fallo:
+        reemplazar = Path.replace
+
+        def fallar_configuracion(ruta, destino):
+            if Path(destino) == config:
+                raise OSError("reemplazo de configuración fallido")
+            return reemplazar(ruta, destino)
+
+        monkeypatch.setattr(Path, "replace", fallar_configuracion)
+        with pytest.raises(SystemExit):
+            controlador.main()
+        assert config.read_bytes() == original
+        assert not (salida / "resumen.json").exists()
+    else:
+        controlador.main()
+        assert json.loads(config.read_bytes())["lambda_terminal"] == 0.75
+    assert sidecar.read_bytes() == contenido
+    assert not list(config.parent.glob(config.name + ".t04.*.tmp"))

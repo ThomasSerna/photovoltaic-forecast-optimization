@@ -280,7 +280,8 @@ El comando verifica balances y límites de los ocho recorridos y comprueba que
 entradas y código siguen iguales. Prepara ambos archivos temporales, publica
 `resumen.json` y reemplaza la configuración común con `lambda_terminal` elegido
 como último paso. Si falla ese reemplazo, retira el informe; los fallos de escritura
-conservan la configuración original y se limpian los temporales. El
+conservan la configuración original y se limpian los temporales. El temporal de
+configuración es exclusivo y conserva cualquier archivo preexistente. El
 informe conserva semillas, bloques, cuantiles, diagnósticos, versiones y hashes.
 La carpeta debe ser nueva; una salida incompleta no acredita éxito. El informe
 conserva la configuración de entrada y la configuración con el peso elegido;
@@ -294,7 +295,7 @@ fue `73488.314906`. Hubo cero violaciones físicas: error máximo del bus
 `2.85e-14` Wh y de batería `2.28e-13` Wh (cotas redondeadas hacia arriba).
 Duración observada: 1266.3 s en CPU, con pesos en caché. El registro local está en
 `results/t04_calibracion_verificada/resumen.json`, excluido de Git y regenerable
-con el comando anterior usando una carpeta nueva. Las 260 pruebas pasan con
+con el comando anterior usando una carpeta nueva. En esa verificación pasaron 260 pruebas con
 `uv run --locked --extra pronosticos pytest -q`. Estos valores son de calibración;
 la evaluación reservada y sus conclusiones corresponden a T05.
 
@@ -330,6 +331,20 @@ b = ejecutar_mpc(caso, con_chronos, **periodo)
 Las pruebas incluyen anticipación comprobable a mano, planes fijos, reservas
 heterogéneas, estados realizados, ausencia de información futura y calibración
 pareada. La evaluación reservada y sus gráficos corresponden a T05.
+
+## Revisión previa a T05
+
+Verificada el **19 de octubre de 2026**: **290 pruebas aprobadas** con
+`uv run --locked --extra pronosticos pytest -q`. Las regresiones incluyen
+ocupaciones pequeñas y heterogéneas, colisiones de destinos y fallos al publicar
+la calibración. Se conservan las interfaces, las ecuaciones y las dependencias.
+
+Los nueve CSV regenerados coinciden byte por byte con los publicados. El recorrido
+beta del 6 al 8 de enero de 2025 (fin exclusivo), con contexto 336 h, H=24, R=6 y
+N=50, conserva exactamente decisiones, pronósticos, flujos, estados y métricas
+anteriores al refactor, con cero violaciones físicas. El registro local con
+semillas, versiones y hashes está en `results/revision_pre_t05/resumen_48h.json`.
+Esta revisión no repitió inferencia real de Chronos ni ejecutó la evaluación de T05.
 
 ## Configuración y regeneración
 
