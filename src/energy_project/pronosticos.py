@@ -1,10 +1,12 @@
-"""T02: Chronos-2 y correcciones comunes de GHI media horaria (W/m²).
+"""Chronos-2, referencia beta y correcciones comunes de GHI media horaria (W/m²).
 
 Adaptación de IDEA.md §5; no implementa el despacho ni las ecuaciones (1)–(10)
 de Acuña et al. (2021). El pipeline se carga una vez y se recibe explícitamente.
 """
 
 import re
+import warnings
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
 import pandas as pd
@@ -84,6 +86,59 @@ def pronosticar_chronos(pipeline, historico, origen, *, contexto=336, horizonte=
     return pd.DataFrame(salida[0], index=indice, columns=cuantiles)
 
 
+def pronosticar_beta(historico, origen, *, contexto=336, horizonte=24, cuantiles=CUANTILES,
+                    zona_horaria="America/Bogota"):
+    """Mezcla por hora local de masa cero y beta positiva escalada (IDEA.md §5).
+
+    Dos formas por MLE, loc=0 y escala=1.05×máximo positivo de la ventana común.
+    Ese soporte estadístico no es un límite físico de GHI. Los positivos constantes
+    son masas puntuales; no se cambia de familia si falla un ajuste.
+    Devuelve cuantiles crudos H×Q: aplicar después la corrección común de noche.
+    """
+    from scipy.stats import beta
+
+    numero(horizonte, "horizonte", minimo=1, maximo=1024, entero=True)
+    validar_cuantiles(cuantiles)
+    ventana = contexto_admisible(historico, origen, contexto)
+    try:
+        zona = ZoneInfo(zona_horaria)
+    except (TypeError, ValueError, ZoneInfoNotFoundError) as error:
+        raise ValueError("zona_horaria: se requiere una zona horaria válida") from error
+    origen = pd.Timestamp(origen).tz_convert("UTC")
+    indice = pd.date_range(origen, periods=horizonte, freq="h", name="inicio_utc")
+    horas = ventana["inicio_utc"].dt.tz_convert(zona).dt.hour
+    futuras = indice.tz_convert(zona).hour
+    niveles = np.asarray(cuantiles, dtype=float)
+    salida = np.zeros((horizonte, len(cuantiles)))
+    for hora in sorted(set(futuras)):
+        valores = ventana.loc[horas == hora, "ghi_w_m2"].to_numpy(dtype=float)
+        if not len(valores):
+            raise ValueError(f"beta: origen {origen.isoformat()}, hora local {hora}: sin observaciones")
+        positivos = valores[valores > 0]
+        p0 = np.count_nonzero(valores == 0) / len(valores)
+        superiores = niveles > p0
+        fila = np.zeros(len(cuantiles))
+        if len(positivos) and np.all(positivos == positivos[0]):
+            fila[superiores] = positivos[0]
+        elif len(positivos):
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error")
+                    parametros = np.asarray(beta.fit(positivos, floc=0, fscale=1.05 * positivos.max()))
+                    if (parametros.shape != (4,) or not np.isfinite(parametros).all()
+                            or (parametros[:2] <= 0).any() or parametros[2] != 0 or parametros[3] <= 0):
+                        raise ValueError("parámetros beta inválidos")
+                    condicionados = beta.ppf((niveles[superiores] - p0) / (1 - p0), *parametros)
+                    if (not np.isfinite(condicionados).all() or (condicionados < 0).any()
+                            or (np.diff(condicionados) < 0).any()):
+                        raise ValueError("cuantiles beta inválidos")
+                    fila[superiores] = condicionados
+            except (ValueError, RuntimeError, ArithmeticError, Warning) as error:
+                raise ValueError(f"beta: origen {origen.isoformat()}, hora local {hora}: {error}") from error
+        salida[futuras == hora] = fila
+    return pd.DataFrame(salida, index=indice, columns=cuantiles)
+
+
 def mascara_noche(indice, configuracion):
     """True solo si [inicio, inicio+1 h) está completamente fuera de amanecer–ocaso.
 
@@ -107,7 +162,7 @@ def mascara_noche(indice, configuracion):
 
 
 def corregir_cuantiles(tabla, configuracion):
-    """Reordenamiento, no negatividad y noche, comunes a Chronos y la futura beta.
+    """Reordenamiento, no negatividad y noche, comunes a Chronos y beta.
 
     No recorta máximos: 1000 W/m² es referencia STC, no un techo de irradiancia.
     Devuelve una copia y los conteos de las correcciones aplicadas.

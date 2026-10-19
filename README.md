@@ -200,6 +200,35 @@ El simulador es determinista: reutiliza los datos, parámetros y semillas de T01
 sin introducir otra semilla. No escribe archivos ni añade un comando; la
 preparación permanece igual. Beta, escenarios, reservas y MPC siguen en T04.
 
+## Referencia beta (T04)
+
+`pronosticar_beta` devuelve los mismos cuantiles crudos, tiempos UTC y unidades
+que Chronos. Ambos reciben las últimas 336 horas completas y disponibles.
+La beta se ajusta por hora local, separando ceros y positivos; se fijan `loc=0`
+y `scale=1.05*max(positivos)` y se estiman las dos formas con SciPy. Los positivos
+constantes se representan como una masa puntual; sin positivos se devuelve cero.
+Un contexto incompleto o ajuste inválido produce error con origen y hora.
+
+```python
+from energy_project.pronosticos import pronosticar_beta, corregir_cuantiles
+
+crudos_beta = pronosticar_beta(
+    caso.irradiancia_historica, "2025-01-06T00:00:00-05:00",
+    contexto=336, horizonte=24,
+)
+beta, correcciones_beta = corregir_cuantiles(crudos_beta, caso.configuracion)
+```
+
+La escala aprendida no recorta GHI a 1000 W/m². La noche, los valores negativos
+y los cruces de cuantiles pasan por la misma corrección que Chronos. SciPy está
+incluido en el extra `pronosticos`; usar `uv sync --locked --extra pronosticos`.
+
+El piloto con tres orígenes de desarrollo descartó beta libre de cuatro
+parámetros: 4 de 36 ajustes tuvieron soporte negativo y 11 emitieron advertencias;
+los 36 ajustes escalados fueron válidos. Fechas, versiones y límites de esa
+comprobación quedan en IDEA §5. No constituye una validación estadística general
+ni una reproducción numérica de beta4 del artículo.
+
 ## Configuración y regeneración
 
 `scripts/configuracion.json` es la configuración única. Las rutas de `datos`
