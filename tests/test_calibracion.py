@@ -1,6 +1,7 @@
 """Calibración pareada mínima, con recorridos físicos y pronósticos dobles."""
 
 from copy import deepcopy
+import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
@@ -111,23 +112,50 @@ def test_verificacion_fisica_detecta_un_balance_de_bateria_alterado():
         controlador._verificar_fisica(resultado, caso.configuracion)
 
 
-@pytest.mark.parametrize("fallo", ["reemplazo", "codigo"])
-def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(tmp_path, monkeypatch, fallo):
+@pytest.fixture
+def publicacion(tmp_path, monkeypatch):
     caso = _caso()
     config = tmp_path / "config.json"
     config.write_text(json.dumps(caso.configuracion), encoding="utf-8")
     original = config.read_bytes()
     caso.rutas = {"configuracion": config}
     salida = tmp_path / "salida"
-    ensayo = dict(lambda_terminal=0., tabla=pd.DataFrame([dict(J=1.)]), pronosticos={},
+    ensayo = dict(lambda_terminal=0.75, tabla=pd.DataFrame([dict(J=1.)]), pronosticos={},
                   inicio_utc=ORIGEN, fin_utc=ORIGEN + pd.Timedelta(hours=2))
     monkeypatch.setattr("energy_project.datos.cargar_caso", lambda ruta: caso)
     monkeypatch.setattr(controlador, "calibrar_mpc", lambda caso: ensayo)
     monkeypatch.setattr(importlib.metadata, "version", lambda paquete: "prueba")
     monkeypatch.setattr(sys, "argv", ["controlador", "--config", str(config), "--salida", str(salida)])
-    if fallo == "reemplazo":
-        def fallar_reemplazo(*args):
-            raise OSError("reemplazo fallido")
+    return caso, config, salida, original
+
+
+@pytest.mark.parametrize("fallo", [
+    "escritura_configuracion", "escritura_informe", "reemplazo_informe", "reemplazo_configuracion", "codigo",
+])
+def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(publicacion, monkeypatch, fallo):
+    _, config, salida, original = publicacion
+    temporal_config = config.with_name(config.name + ".t04.tmp")
+    temporal_informe = salida / "resumen.json.tmp"
+    if fallo.startswith("escritura"):
+        escribir = Path.write_text
+        ruta_fallida = temporal_config if fallo == "escritura_configuracion" else temporal_informe
+
+        def fallar_escritura(ruta, *args, **kwargs):
+            if ruta == ruta_fallida:
+                escribir(ruta, "archivo parcial", encoding="utf-8")
+                raise OSError("escritura fallida")
+            return escribir(ruta, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", fallar_escritura)
+    elif fallo.startswith("reemplazo"):
+        reemplazar = Path.replace
+        ruta_fallida = temporal_config if fallo == "reemplazo_configuracion" else temporal_informe
+
+        def fallar_reemplazo(ruta, destino):
+            if ruta == ruta_fallida:
+                raise OSError("reemplazo fallido")
+            return reemplazar(ruta, destino)
+
         monkeypatch.setattr(Path, "replace", fallar_reemplazo)
     else:
         hashes = iter([{"controlador.py": "original"}, {"controlador.py": "editado"}])
@@ -137,3 +165,18 @@ def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(tmp_p
     assert error.value.code == 1
     assert not (salida / "resumen.json").exists()
     assert config.read_bytes() == original
+    assert not temporal_config.exists()
+    assert not temporal_informe.exists()
+
+
+def test_calibracion_exitosa_publica_informe_y_configuracion_coherentes(publicacion):
+    caso, config, salida, original = publicacion
+    controlador.main()
+    actualizada = json.loads(config.read_text(encoding="utf-8"))
+    informe = json.loads((salida / "resumen.json").read_text(encoding="utf-8"))
+    assert actualizada["lambda_terminal"] == informe["lambda_terminal"] == 0.75
+    assert informe["configuracion"] == actualizada
+    assert informe["configuracion_entrada"] == caso.configuracion == json.loads(original)
+    assert informe["entradas_sha256"]["configuracion"]["sha256"] == hashlib.sha256(original).hexdigest()
+    assert not config.with_name(config.name + ".t04.tmp").exists()
+    assert not (salida / "resumen.json.tmp").exists()

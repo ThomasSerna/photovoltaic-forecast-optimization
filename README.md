@@ -276,9 +276,11 @@ pronósticos por origen y mantiene ocho recorridos con estados independientes.
 Elige el peso con mayor promedio de `J` realizado A/B; empata por el menor peso.
 `calibrar_mpc(caso, pipeline=None)` devuelve la tabla de ocho resultados, sus
 recorridos, pronósticos, fechas y peso elegido, sin modificar la configuración.
-El comando verifica balances y límites de los ocho recorridos, comprueba que
-entradas y código siguen iguales, actualiza `lambda_terminal` en la configuración
-común mediante reemplazo y publica `resumen.json` al terminar. El
+El comando verifica balances y límites de los ocho recorridos y comprueba que
+entradas y código siguen iguales. Prepara ambos archivos temporales, publica
+`resumen.json` y reemplaza la configuración común con `lambda_terminal` elegido
+como último paso. Si falla ese reemplazo, retira el informe; los fallos de escritura
+conservan la configuración original y se limpian los temporales. El
 informe conserva semillas, bloques, cuantiles, diagnósticos, versiones y hashes.
 La carpeta debe ser nueva; una salida incompleta no acredita éxito. El informe
 conserva la configuración de entrada y la configuración con el peso elegido;

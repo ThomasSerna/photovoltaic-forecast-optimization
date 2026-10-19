@@ -366,12 +366,23 @@ def main():
         texto = json.dumps(informe, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
         if codigo_sha256() != codigo_antes or entradas_sha256(caso.rutas) != entradas_antes:
             raise ValueError("calibración: cambiaron entradas o código durante el ensayo")
-        # Solo un ensayo completo y verificado puede actualizar el peso experimental.
-        temporal = args.config.with_name(args.config.name + ".t04.tmp")
-        temporal.write_text(json.dumps(config, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
-                            encoding="utf-8")
-        temporal.replace(args.config)
-        (salida / "resumen.json").write_text(texto, encoding="utf-8")
+        temporal_config = args.config.with_name(args.config.name + ".t04.tmp")
+        temporal_informe = salida / "resumen.json.tmp"
+        ruta_informe = salida / "resumen.json"
+        try:
+            temporal_config.write_text(
+                json.dumps(config, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+            temporal_informe.write_text(texto, encoding="utf-8")
+            temporal_informe.replace(ruta_informe)
+            try:
+                # La configuración solo cambia cuando el informe completo ya está publicado.
+                temporal_config.replace(args.config)
+            except OSError:
+                ruta_informe.unlink()
+                raise
+        finally:
+            temporal_config.unlink(missing_ok=True)
+            temporal_informe.unlink(missing_ok=True)
     except (OSError, ValueError, ImportError, RuntimeError, KeyError, TypeError) as error:
         parser.exit(1, f"Error: {error}\nLa salida {args.salida} puede estar incompleta; no es válida.\n")
     print(f"{salida}: lambda_terminal={elegido:g}")
