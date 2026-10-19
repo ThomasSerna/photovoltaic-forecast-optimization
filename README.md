@@ -6,7 +6,7 @@ semisintético contextualizado en el Centro Educativo Rural El Rayo, Támesis:
 y controlador MPC heurístico.
 
 **T01–T03 completadas:** datos, pronósticos Chronos-2 y simulador energético.
-**T04 implementada:** referencia beta, escenarios y MPC; ensayo pareado en CPU pendiente.
+**T04 completada:** referencia beta, escenarios y MPC; ensayo pareado verificado en CPU.
 El comando de preparación descrito abajo todavía **no ejecuta el simulador**
 ni los pronósticos. El alcance matemático y el experimento se explican en
 [docs/IDEA.md](docs/IDEA.md).
@@ -16,7 +16,7 @@ ni los pronósticos. El alcance matemático y el experimento se explican en
 - **T01 — Preparación de datos:** completada ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)).
 - **T02 — Chronos-2:** completada y verificada en CPU ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
 - **T03 — Simulador energético y heurística:** completada ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)).
-- **T04 — Referencia beta y MPC compartido:** implementada; verificación del ensayo en CPU pendiente ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
+- **T04 — Referencia beta y MPC compartido:** completada y verificada en CPU ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
 - **T05 — Comparación y resultados:** pendiente ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)).
 
 El objetivo es simplificar el código y la arquitectura, **sin simplificar
@@ -264,7 +264,37 @@ solo ejecución realizada, recalcula `S_pond` sobre sus totales y excluye el té
 terminal de `J`. Este MPC es una adaptación del proyecto; no es el algoritmo
 de selección de soluciones frecuentes del artículo ni garantiza optimalidad.
 
-El peso terminal compartido queda pendiente de calibración en desarrollo.
+La calibración común se ejecuta con:
+
+```powershell
+uv run --locked --extra pronosticos python -m energy_project.controlador --salida results/t04_calibracion
+```
+
+Usa exclusivamente 6–12 de enero de 2025 (fin exclusivo el 13), H=24, R=6 y
+N=50; prueba `lambda_terminal` en 0, 0.25, 0.5 y 0.75 para ambas ramas. Reutiliza
+pronósticos por origen y mantiene ocho recorridos con estados independientes.
+Elige el peso con mayor promedio de `J` realizado A/B; empata por el menor peso.
+`calibrar_mpc(caso, pipeline=None)` devuelve la tabla de ocho resultados, sus
+recorridos, pronósticos, fechas y peso elegido, sin modificar la configuración.
+El comando verifica balances y límites de los ocho recorridos, comprueba que
+entradas y código siguen iguales, actualiza `lambda_terminal` en la configuración
+común mediante reemplazo y publica `resumen.json` al terminar. El
+informe conserva semillas, bloques, cuantiles, diagnósticos, versiones y hashes.
+La carpeta debe ser nueva; una salida incompleta no acredita éxito. El informe
+conserva la configuración de entrada y la configuración con el peso elegido;
+el hash de la entrada corresponde al archivo anterior a esa actualización.
+
+**Ensayo CPU verificado:** 28 orígenes por proveedor y ocho recorridos de 168 h;
+`lambda_terminal=0` por empate de los cuatro pesos. En esta semana de calibración,
+beta obtuvo `J=73192.486644`, `S_pond=0.9540504745`; Chronos obtuvo
+`J=73784.143168`, `S_pond=0.9617626074`, para todos los pesos. El promedio pareado
+fue `73488.314906`. Hubo cero violaciones físicas: error máximo del bus
+`2.85e-14` Wh y de batería `2.28e-13` Wh (cotas redondeadas hacia arriba).
+Duración observada: 1266.3 s en CPU, con pesos en caché. El registro local está en
+`results/t04_calibracion_verificada/resumen.json`, excluido de Git y regenerable
+con el comando anterior usando una carpeta nueva. Las 260 pruebas pasan con
+`uv run --locked --extra pronosticos pytest -q`. Estos valores son de calibración;
+la evaluación reservada y sus conclusiones corresponden a T05.
 
 Tras calibrar, este ejemplo ejecuta un día de desarrollo con el mismo peso y
 carga Chronos una sola vez:
@@ -382,8 +412,8 @@ original en el repositorio.
 
 Los cinco CSV originales conservan su contenido. Se verifica conservación diaria
 con tolerancia de 0,001 Wh y capacidad por solicitud con holgura de 1e-6 Wh por
-redondeo. T03 verifica los balances físicos horarios; el ensayo de calibración
-de T04 en CPU y la comparación final beta/Chronos-2 de T05 siguen pendientes.
+redondeo. T03 verifica los balances físicos horarios y T04 verifica el ensayo
+pareado de calibración en CPU. La comparación final de T05 permanece pendiente.
 Consultar `docs/datos.md` para datos/unidades y `docs/IDEA.md` para el protocolo
 experimental y las adaptaciones al [paper de Acuna et al.](https://doi.org/10.3390/en14102789).
 

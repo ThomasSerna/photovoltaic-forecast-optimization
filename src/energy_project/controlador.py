@@ -10,10 +10,16 @@ import numpy as np
 import pandas as pd
 
 from .configuracion import numero
-from .pronosticos import contexto_admisible, corregir_cuantiles, validar_cuantiles
+from .pronosticos import (
+    cargar_chronos, contexto_admisible, corregir_cuantiles, pronosticar_beta,
+    pronosticar_chronos, validar_cuantiles,
+)
 from .simulador import _estado_inicial, simular
 
 RESERVAS = (0., 0.25, 0.5, 0.75)
+PESOS_TERMINALES = (0., 0.25, 0.5, 0.75)
+CALIBRACION_INICIO = "2025-01-06T00:00:00-05:00"
+CALIBRACION_FIN = "2025-01-13T00:00:00-05:00"
 
 
 def _validar_cuantiles_horarios(tabla, origen, horizonte, cuantiles):
@@ -213,3 +219,163 @@ def ejecutar_mpc(caso, pronosticar, *, inicio, fin, estado_inicial=None):
         origen += pd.Timedelta(hours=config["replanificacion"])
     return _unir_resultados(resultados, decisiones, pronosticos)
 
+
+def _verificar_fisica(resultado, configuracion):
+    """Contrasta los resultados realizados con IDEA §4, sin ampliar presupuestos."""
+    cargas, horas, baterias = (resultado[n] for n in ("cargas", "horas", "baterias"))
+    limites = min(configuracion["potencia_bus_max_w"], configuracion["pv"]["inversor_max_w"])
+    potencia = (cargas["potencia_w_supuesta"] * cargas["z"]).groupby(cargas["t"]).sum()
+    if (not cargas[["x", "z", "solicitada"]].isin([0, 1]).all().all()
+            or (cargas.z > cargas.x).any() or (cargas.x > cargas.solicitada).any()
+            or not (cargas.atendida_wh == cargas.demanda_wh * cargas.z).all()
+            or (potencia > limites).any() or (horas.vertido_wh < 0).any()):
+        raise ValueError("verificación: violación de servicio, potencia nominal o vertido")
+    neto = baterias.groupby("t")[["carga_wh", "descarga_wh"]].sum()
+    bus = horas.set_index("t").eval("fv_wh - atendida_wh - vertido_wh") + neto.descarga_wh - neto.carga_wh
+    error_bateria = 0.
+    for bateria in configuracion["baterias"]:
+        flujos = baterias.loc[baterias.bateria_id.eq(bateria["id"])].sort_values("t")
+        inicial, final = flujos.inicial_wh, flujos.final_wh
+        carga, descarga = flujos.carga_wh, flujos.descarga_wh
+        eta_c, eta_d = bateria["eficiencia_carga"], bateria["eficiencia_descarga"]
+        error = (final - inicial - eta_c * carga + descarga / eta_d).abs().max()
+        error_bateria = max(error_bateria, float(error))
+        if (not flujos[["inicial_wh", "final_wh"]].ge(bateria["minimo_wh"]).all().all()
+                or not flujos[["inicial_wh", "final_wh"]].le(bateria["maximo_wh"]).all().all()
+                or not flujos[["carga_wh", "descarga_wh"]].ge(0).all().all()
+                or (carga * descarga != 0).any()
+                or (carga > bateria["potencia_carga_max_w"]).any()
+                or (descarga > bateria["potencia_descarga_max_w"]).any()
+                or (carga > (bateria["maximo_wh"] - inicial) / eta_c).any()
+                or (descarga > eta_d * (inicial - bateria["minimo_wh"])).any()
+                or inicial.iloc[1:].tolist() != final.iloc[:-1].tolist()
+                or resultado["estado_final"][bateria["id"]] != final.iloc[-1]):
+            raise ValueError(f"verificación: límites o continuidad de batería {bateria['id']}")
+    error_bus = float(bus.abs().max())
+    if not np.isfinite([error_bus, error_bateria]).all() or max(error_bus, error_bateria) > 1e-6:
+        raise ValueError("verificación: error de balance superior a 1e-6 Wh")
+    return dict(max_error_bus_wh=error_bus, max_error_bateria_wh=error_bateria, violaciones_fisicas=0)
+
+
+def calibrar_mpc(caso, pipeline=None):
+    """Ensayo pareado de desarrollo: selecciona un solo peso por J realizado medio.
+
+    Reutiliza los pronósticos de cada origen entre pesos. Cada combinación de
+    proveedor y peso conserva su estado independiente, sin consultar evaluación.
+    """
+    inicio, fin, reloj = _periodo(caso, CALIBRACION_INICIO, CALIBRACION_FIN)
+    config = caso.configuracion
+    desarrollo = config["periodos"]["desarrollo"]
+    if inicio < pd.Timestamp(desarrollo["inicio"]) or fin > pd.Timestamp(desarrollo["fin"]):
+        raise ValueError("calibración: el ensayo debe permanecer dentro de desarrollo")
+    opciones = config["pronosticos"]
+    if pipeline is None:
+        pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
+    proveedores = {
+        "beta": lambda historia, origen, horizonte: pronosticar_beta(
+            historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
+            cuantiles=opciones["cuantiles"], zona_horaria=config["zona_horaria"]),
+        "chronos": lambda historia, origen, horizonte: pronosticar_chronos(
+            pipeline, historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
+            cuantiles=opciones["cuantiles"]),
+    }
+    claves = [(nombre, peso) for nombre in proveedores for peso in PESOS_TERMINALES]
+    estados = {clave: _estado_inicial(config["baterias"], None) for clave in claves}
+    recorridos, decisiones = {clave: [] for clave in claves}, {clave: [] for clave in claves}
+    pronosticos = {nombre: [] for nombre in proveedores}
+    for origen in pd.date_range(inicio, fin, freq=f"{config['replanificacion']}h", inclusive="left"):
+        horizonte = min(config["horizonte"], int((fin - origen) / pd.Timedelta(hours=1)))
+        for nombre, pronosticar in proveedores.items():
+            prediccion = _predecir(caso, pronosticar, origen, horizonte)
+            pronosticos[nombre].append(dict(origen_utc=origen, **prediccion))
+            for peso in PESOS_TERMINALES:
+                clave = (nombre, peso)
+                opciones_control = dict(config, lambda_terminal=peso)
+                resultado, decision = _ejecutar_bloque(
+                    caso, reloj, origen, fin, prediccion, estados[clave], opciones_control)
+                estados[clave] = resultado["estado_final"]
+                recorridos[clave].append(resultado)
+                decisiones[clave].append(decision)
+    resultados, filas = {}, []
+    for nombre, peso in claves:
+        clave = (nombre, peso)
+        resultado = _unir_resultados(recorridos[clave], decisiones[clave], pronosticos[nombre])
+        diagnostico = _verificar_fisica(resultado, config)
+        resultados[clave] = resultado
+        filas.append(dict(proveedor=nombre, lambda_terminal=peso, **resultado["resumen"], **diagnostico))
+    tabla = pd.DataFrame(filas)
+    medias = tabla.groupby("lambda_terminal", sort=True)["J"].mean()
+    elegido = float(medias.idxmax())
+    return dict(lambda_terminal=elegido, tabla=tabla, resultados=resultados, pronosticos=pronosticos,
+                inicio_utc=inicio, fin_utc=fin)
+
+
+def main():
+    """Calibra en desarrollo, verifica y guarda el peso común sin tocar evaluación."""
+    import argparse
+    import importlib.metadata
+    import json
+    from pathlib import Path
+    from time import perf_counter
+
+    from .cli import codigo_sha256, entradas_sha256, entorno, sha256_de
+    from .datos import cargar_caso
+
+    parser = argparse.ArgumentParser(description=main.__doc__)
+    parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
+    parser.add_argument("--salida", type=Path, default=Path("results/t04_calibracion"))
+    args = parser.parse_args()
+    try:
+        caso = cargar_caso(args.config)
+        salida = args.salida.resolve()
+        if salida == args.config.resolve() or salida in [p.resolve() for p in caso.rutas.values()]:
+            raise ValueError("salida: no puede reemplazar una entrada")
+        salida.mkdir(parents=True, exist_ok=False)
+        entradas_antes = entradas_sha256(caso.rutas)
+        codigo_antes = codigo_sha256()
+        inicio = perf_counter()
+        ensayo = calibrar_mpc(caso)
+        duracion = perf_counter() - inicio
+        elegido = ensayo["lambda_terminal"]
+        config = dict(caso.configuracion, lambda_terminal=elegido)
+        versiones = entorno()
+        for paquete in ("numpy", "scipy", "chronos-forecasting", "torch", "astral"):
+            versiones[paquete] = importlib.metadata.version(paquete)
+        registros = []
+        for nombre, pronosticos in ensayo["pronosticos"].items():
+            for p in pronosticos:
+                registros.append(dict(
+                    proveedor=nombre, origen_utc=p["origen_utc"].isoformat(),
+                    semilla=p["semilla"], bloques=[f.isoformat() for f in p["bloques"]],
+                    correcciones=p["correcciones"], inicio_utc=[f.isoformat() for f in p["crudos"].index],
+                    crudos=p["crudos"].to_numpy().tolist(), corregidos=p["corregidos"].to_numpy().tolist()))
+        informe = dict(
+            alcance="T04: calibración pareada de desarrollo, no evaluación final",
+            inicio_utc=ensayo["inicio_utc"].isoformat(), fin_utc=ensayo["fin_utc"].isoformat(),
+            lambda_terminal=elegido, pesos=list(PESOS_TERMINALES), duracion_s=duracion,
+            criterio="máximo promedio de J realizado de beta y Chronos; empate por menor peso",
+            configuracion=config, resultados=ensayo["tabla"].to_dict("records"), pronosticos=registros,
+            configuracion_entrada=caso.configuracion,
+            entradas_sha256=entradas_antes, codigo_sha256=codigo_antes, entorno=versiones,
+            uv_lock_sha256=sha256_de(Path(__file__).resolve().parents[2] / "uv.lock"),
+            supuestos=["beta2: loc=0, escala=1.05*máximo positivo por hora de las últimas 336 h",
+                       "rangos por columna con empates promedio; colas constantes en q0.1 y q0.9",
+                       "reservas solo al generar candidatos; física T03 en evaluación y ejecución",
+                       "MPC heurístico adaptado, sin garantía de optimalidad o calibración conjunta"],
+        )
+        texto = json.dumps(informe, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+        if codigo_sha256() != codigo_antes or entradas_sha256(caso.rutas) != entradas_antes:
+            raise ValueError("calibración: cambiaron entradas o código durante el ensayo")
+        # Solo un ensayo completo y verificado puede actualizar el peso experimental.
+        temporal = args.config.with_name(args.config.name + ".t04.tmp")
+        temporal.write_text(json.dumps(config, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+                            encoding="utf-8")
+        temporal.replace(args.config)
+        (salida / "resumen.json").write_text(texto, encoding="utf-8")
+    except (OSError, ValueError, ImportError, RuntimeError, KeyError, TypeError) as error:
+        parser.exit(1, f"Error: {error}\nLa salida {args.salida} puede estar incompleta; no es válida.\n")
+    print(f"{salida}: lambda_terminal={elegido:g}")
+
+
+if __name__ == "__main__":
+    main()
