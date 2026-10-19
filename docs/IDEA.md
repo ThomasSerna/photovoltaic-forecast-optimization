@@ -206,7 +206,7 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
 - **Reservas.** Beta eligió \(\rho=0\) en todos los orígenes y Chronos eligió \(\rho=0.25\) en dos.
 - **Referencia reactiva.** Obtiene \(J=285240.845\): menor que A y B, aunque deja menos energía sin atender. Atiende más cargas de prioridad 1 (73.3 %) y menos de prioridad 2 (90.6 %). En la semana de calibración había superado a ambas ramas, así que no acota al MPC.
 - **Consistencia.** Cero violaciones físicas: error del bus ≤ 1.2e−13 Wh y de batería ≤ 2.9e−13 Wh. Cero filtraciones.
-- **Reproducibilidad y tiempos.** Dos ejecuciones completas produjeron CSV idénticos. La ejecución duró 266.2 s en CPU, con inferencias medias de 0.010 s (beta) y 0.028 s (Chronos) por origen.
+- **Reproducibilidad y tiempos.** Dos ejecuciones completas produjeron CSV de resultados idénticos; en `tabla_ab.csv` solo cambian los tiempos medidos. Las figuras del artículo son copias de esta ejecución en `docs/figuras/`. La ejecución duró 266.2 s en CPU, con inferencias medias de 0.010 s (beta) y 0.028 s (Chronos) por origen.
 
 **Lectura del resultado.** Un pronóstico mejor no se traduce automáticamente en más servicio. Con calendario fijo (\(z\le x\)), una mediana pesimista deja cargas sin comprometer y una optimista compromete cargas que luego se desconectan: Chronos registró 35 compromisos incumplidos y beta, 29. El efecto neto depende de pocos días nublados. Estas cifras son exploratorias y no permiten afirmar significancia.
 

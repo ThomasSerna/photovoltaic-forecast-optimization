@@ -348,7 +348,8 @@ Los nueve CSV regenerados coinciden byte por byte con los publicados. El recorri
 beta del 6 al 8 de enero de 2025 (fin exclusivo), con contexto 336 h, H=24, R=6 y
 N=50, conserva exactamente decisiones, pronósticos, flujos, estados y métricas
 anteriores al refactor, con cero violaciones físicas. El registro local con
-semillas, versiones y hashes está en `results/revision_pre_t05/resumen_48h.json`.
+semillas, versiones y hashes está en `results/revision_pre_t05/resumen_48h.json`,
+excluido de Git.
 Esta revisión no repitió inferencia real de Chronos ni ejecutó la evaluación de T05.
 
 ## Evaluación final A/B (T05)
@@ -444,7 +445,9 @@ repeticiones fueron exactas.
 **Recursos y reproducibilidad.** La ejecución duró 266.2 s en CPU, con los pesos de
 Chronos en caché (carga de 8.4 s). Cada rama tardó unos 117 s, sobre todo en
 simulaciones del MPC. La inferencia media por origen fue de 0.010 s con beta y
-0.028 s con Chronos. Una segunda ejecución completa produjo CSV idénticos byte a byte.
+0.028 s con Chronos. Una segunda ejecución completa produjo CSV de resultados idénticos
+byte a byte; en `tabla_ab.csv` solo cambian las filas de tiempos medidos. Las cuatro
+figuras de esta ejecución se copiaron a `docs/figuras/` para el artículo.
 Con 28 días, una sola realización y demanda sintética, estos resultados son
 exploratorios. No se aplican pruebas de significancia.
 

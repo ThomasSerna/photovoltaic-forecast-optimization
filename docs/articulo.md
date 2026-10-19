@@ -5,7 +5,8 @@ Caso semisintético contextualizado en el Centro Educativo Rural El Rayo, Támes
 (Antioquia). Integrantes: Thomas Serna, Juan Esteban Palacio y Jeronimo Gutierrez.
 
 > Estado: borrador. Las secciones 3 a 6 se generaron a partir de
-> `results/t05_evaluacion/` (regenerable con el comando de la sección 3.6). El resumen,
+> `results/t05_evaluacion_verificada/` (regenerable con el comando de la sección 3.6);
+> sus cuatro figuras se copiaron a `docs/figuras/`. El resumen,
 > la introducción y la revisión de literatura se redactaron a partir de `docs/IDEA.md`,
 > de Acuña et al. (2021) y de la ficha de Chronos-2; el equipo debe revisarlos antes de
 > la entrega.
@@ -324,7 +325,8 @@ Si alguna comprobación falla, no publica `resumen.json`.
 
 Los valores proceden de la ejecución verificada el 19 de octubre de 2026
 (`results/t05_evaluacion_verificada/`). Esa carpeta está excluida de Git y se
-regenera con el comando anterior en una carpeta nueva. Entorno: Python 3.12.15,
+regenera con el comando anterior en una carpeta nueva; las figuras de esta sección son
+copias de las suyas, guardadas en `docs/figuras/`. Entorno: Python 3.12.15,
 chronos-forecasting 2.3.2, torch 2.14.1, SciPy 1.18.1 y CPU con Windows 11.
 
 ### 4.1. Consistencia del experimento
@@ -337,7 +339,8 @@ chronos-forecasting 2.3.2, torch 2.14.1, SciPy 1.18.1 y CPU con Windows 11.
   origen.
 - **Repetición.** Las primeras 30 h, con horizonte completo, coincidieron
   exactamente: diferencia de 0 Wh en flujos y 0 W/m² en cuantiles crudos. Una
-  segunda ejecución completa produjo los mismos CSV, byte a byte.
+  segunda ejecución completa produjo los mismos CSV de resultados, byte a byte; solo
+  cambian los tiempos medidos de la tabla A/B.
 - **Tiempos.** La ejecución duró 266 s en CPU. Cada rama tardó unos 117 s, dominados
   por las 50 simulaciones de cada calendario candidato. La inferencia media por
   origen fue de 0,010 s con beta y 0,028 s con Chronos-2, y la carga de Chronos-2
@@ -364,7 +367,7 @@ cobertura nominal; el de beta resulta algo estrecho. Durante el día, la correcc
 común apenas modifica los cuantiles: el pinball diurno crudo de Chronos-2 es
 25,128 W/m².
 
-![Irradiancia realizada y pronosticada](../results/t05_evaluacion_verificada/figuras/irradiancia.png)
+![Irradiancia realizada y pronosticada](figuras/irradiancia.png)
 
 *Figura 1. ERA5 realizada frente a la mediana y la banda 0,1–0,9 de cada proveedor,
 en las seis primeras horas de cada origen.*
@@ -385,8 +388,11 @@ es de 148 427 Wh.
 | Horas con demanda atendida por completo | 93,01 % | 93,01 % | 0 | 93,01 % |
 | Faltante medio en horas con déficit | 25,90 % | 25,89 % | −0,01 p.p. | 25,82 % |
 | Compromisos incumplidos (carga·h) | 29 | 35 | +6 | 0 |
-| Solicitudes no comprometidas (carga·h) | 191 | 194 | +3 | — |
+| Solicitudes no comprometidas (carga·h) | 191 | 194 | +3 | 209 |
 | Solicitudes desatendidas (carga·h) | 220 | 229 | +9 | 209 |
+
+En la referencia reactiva el compromiso coincide con el servicio (x = z), así que sus
+solicitudes no comprometidas son exactamente las desatendidas.
 
 La diferencia pareada favorece a Chronos-2 en J y S_pond, pero es pequeña. Se
 concentra en 4 de los 28 días; los otros 24 dan exactamente el mismo J:
@@ -404,11 +410,11 @@ energía (Figura 2), y a un día aislado. La ventaja de Chronos-2 no consiste en
 atender más cargas: atiende 9 solicitudes menos. Lo que cambia es su composición:
 más energía de prioridad 2 y menos de prioridad 1.
 
-![Demanda atendida por día](../results/t05_evaluacion_verificada/figuras/demanda_atendida.png)
+![Demanda atendida por día](figuras/demanda_atendida.png)
 
 *Figura 2. S_pond diario y energía no atendida por día para A, B y la referencia.*
 
-![Diferencias diarias](../results/t05_evaluacion_verificada/figuras/diferencias_diarias.png)
+![Diferencias diarias](figuras/diferencias_diarias.png)
 
 *Figura 3. ΔJ diario; los valores positivos favorecen a Chronos-2.*
 
@@ -424,7 +430,7 @@ más energía de prioridad 2 y menos de prioridad 1.
   Chronos-2. Chronos-2 eligió ρ = 0,25 en dos orígenes nublados (3 de marzo a las
   18:00 y 4 de marzo a las 00:00, hora local).
 
-![Estado de las baterías](../results/t05_evaluacion_verificada/figuras/baterias.png)
+![Estado de las baterías](figuras/baterias.png)
 
 *Figura 4. Energía almacenada en cada batería al final de cada hora.*
 
