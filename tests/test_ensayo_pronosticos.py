@@ -14,8 +14,8 @@ pytest.importorskip("astral")
 pytest.importorskip("matplotlib")
 pytest.importorskip("psutil")
 
-from energy_project import cargar_caso, historial_admisible
-from energy_project import pronosticos
+from src import cargar_caso, historial_admisible
+from src import pronosticos
 
 RAIZ = Path(__file__).resolve().parents[1]
 

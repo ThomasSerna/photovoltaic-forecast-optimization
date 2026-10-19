@@ -376,7 +376,7 @@ def main():
             configuracion=config, resultados=ensayo["tabla"].to_dict("records"), pronosticos=registros,
             configuracion_entrada=caso.configuracion,
             entradas_sha256=entradas_antes, codigo_sha256=codigo_antes, entorno=versiones,
-            uv_lock_sha256=sha256_de(Path(__file__).resolve().parents[2] / "uv.lock"),
+            uv_lock_sha256=sha256_de(Path(__file__).resolve().parents[1] / "uv.lock"),
             supuestos=["beta2: loc=0, escala=1.05*máximo positivo por hora de las últimas 336 h",
                        "rangos por columna con empates promedio; colas constantes en q0.1 y q0.9",
                        "reservas solo al generar candidatos; física T03 en evaluación y ejecución",

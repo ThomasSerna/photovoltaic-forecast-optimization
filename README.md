@@ -37,6 +37,9 @@ uv instala Python 3.12 si hace falta y crea `.venv/` con las versiones de
 `uv.lock`. No hacen falta credenciales, solver ni descargas meteorológicas para
 validar el caso publicado. La primera instalación necesita acceso a internet.
 
+Los módulos están directamente en `src/`; se importan, por ejemplo, con
+`from src import cargar_caso` y se ejecutan con `python -m src.pronosticos`.
+
 El comando comprueba los nueve CSV y muestra un resumen; además escribe
 `results/preparacion_hu01.json`. `--salida otra/ruta.json` permite elegir el
 informe. Incluye conteos, periodos, semillas, supuestos, configuración física,
@@ -53,8 +56,8 @@ uv sync --locked --extra pronosticos
 ```
 
 ```python
-from energy_project import cargar_caso
-from energy_project.pronosticos import cargar_chronos, pronosticar_chronos, corregir_cuantiles
+from src import cargar_caso
+from src.pronosticos import cargar_chronos, pronosticar_chronos, corregir_cuantiles
 
 caso = cargar_caso("scripts/configuracion.json")
 opciones = caso.configuracion["pronosticos"]
@@ -92,7 +95,7 @@ físicas del artículo ni las modifica. T03 implementa la física; el MPC perten
 El ensayo reproducible se ejecuta con:
 
 ```powershell
-uv run --locked --extra pronosticos python -m energy_project.pronosticos
+uv run --locked --extra pronosticos python -m src.pronosticos
 uv run --locked --extra pronosticos pytest
 ```
 
@@ -147,8 +150,8 @@ No garantiza el óptimo global ni representa la operación eléctrica dentro de 
 Ejemplo reproducible de las primeras 48 horas de desarrollo, desde la raíz:
 
 ```python
-from energy_project import cargar_caso
-from energy_project.simulador import simular
+from src import cargar_caso
+from src.simulador import simular
 
 caso = cargar_caso("scripts/configuracion.json")
 demanda = caso.demanda.loc[caso.demanda["t"] < 48]
@@ -214,7 +217,7 @@ constantes se representan como una masa puntual; sin positivos se devuelve cero.
 Un contexto incompleto o ajuste inválido produce error con origen y hora.
 
 ```python
-from energy_project.pronosticos import pronosticar_beta, corregir_cuantiles
+from src.pronosticos import pronosticar_beta, corregir_cuantiles
 
 crudos_beta = pronosticar_beta(
     caso.irradiancia_historica, "2025-01-06T00:00:00-05:00",
@@ -267,7 +270,7 @@ de selección de soluciones frecuentes del artículo ni garantiza optimalidad.
 La calibración común se ejecuta con:
 
 ```powershell
-uv run --locked --extra pronosticos python -m energy_project.controlador --salida results/t04_calibracion
+uv run --locked --extra pronosticos python -m src.controlador --salida results/t04_calibracion
 ```
 
 Usa exclusivamente 6–12 de enero de 2025 (fin exclusivo el 13), H=24, R=6 y
@@ -303,9 +306,9 @@ Tras calibrar, este ejemplo ejecuta un día de desarrollo con el mismo peso y
 carga Chronos una sola vez:
 
 ```python
-from energy_project import cargar_caso
-from energy_project.controlador import ejecutar_mpc
-from energy_project.pronosticos import cargar_chronos, pronosticar_beta, pronosticar_chronos
+from src import cargar_caso
+from src.controlador import ejecutar_mpc
+from src.pronosticos import cargar_chronos, pronosticar_beta, pronosticar_chronos
 
 caso = cargar_caso("scripts/configuracion.json")
 opciones = caso.configuracion["pronosticos"]
@@ -381,7 +384,7 @@ Para adquirir de nuevo la ventana completa de 2024–2025, sin reemplazar el
 snapshot publicado:
 
 ```powershell
-uv run python -m energy_project.descarga --config scripts/configuracion.json
+uv run python -m src.descarga --config scripts/configuracion.json
 ```
 
 Se crea una carpeta nueva en `data/adquisiciones/<instanteUTC>/`, con
@@ -393,7 +396,7 @@ nueva no recupera la respuesta original ausente de los CSV heredados.
 Para un ensayo breve, con fin exclusivo y directorio de salida nuevo:
 
 ```powershell
-uv run python -m energy_project.descarga --inicio 2025-01-06 --fin 2025-01-07 --salida results/solar_un_dia
+uv run python -m src.descarga --inicio 2025-01-06 --fin 2025-01-07 --salida results/solar_un_dia
 ```
 
 Si la carpeta ya existe, el descargador falla sin sobrescribirla. Los intervalos
@@ -405,7 +408,7 @@ diagnóstico. El comando de validación habitual sigue funcionando sin red.
 ## Uso desde Python
 
 ```python
-from energy_project import cargar_caso, historial_admisible
+from src import cargar_caso, historial_admisible
 
 caso = cargar_caso("scripts/configuracion.json")
 contexto = historial_admisible(

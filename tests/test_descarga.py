@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 import pandas as pd
 import pytest
 
-from energy_project.descarga import construir_consulta, descargar_irradiancia, normalizar_respuesta
+from src.descarga import construir_consulta, descargar_irradiancia, normalizar_respuesta
 
 
 @pytest.fixture
@@ -105,9 +105,9 @@ def test_rechaza_ventana_invalida(config_solar, inicio, fin):
 def test_guarda_nueva_adquisicion_y_hashes(tmp_path, monkeypatch, config_solar):
     ruta_config = tmp_path / "config.json"
     ruta_config.write_text(json.dumps(config_solar), encoding="utf-8")
-    monkeypatch.setattr("energy_project.descarga.cargar_configuracion", lambda ruta: config_solar)
+    monkeypatch.setattr("src.descarga.cargar_configuracion", lambda ruta: config_solar)
     cruda = json.dumps(respuesta_solar("2025-01-07", "2025-01-08")).encode()
-    monkeypatch.setattr("energy_project.descarga.urlopen", lambda *args, **kwargs: io.BytesIO(cruda))
+    monkeypatch.setattr("src.descarga.urlopen", lambda *args, **kwargs: io.BytesIO(cruda))
     salida = tmp_path / "nueva"
     assert descargar_irradiancia(ruta_config, salida, "2025-01-07", "2025-01-08") == salida
     assert (salida / "respuesta.json").read_bytes() == cruda
@@ -127,10 +127,10 @@ def test_guarda_nueva_adquisicion_y_hashes(tmp_path, monkeypatch, config_solar):
 def test_error_de_red_no_produce_csv(tmp_path, monkeypatch, config_solar):
     ruta_config = tmp_path / "config.json"
     ruta_config.write_text(json.dumps(config_solar), encoding="utf-8")
-    monkeypatch.setattr("energy_project.descarga.cargar_configuracion", lambda ruta: config_solar)
+    monkeypatch.setattr("src.descarga.cargar_configuracion", lambda ruta: config_solar)
     def fallar(*args, **kwargs):
         raise URLError("sin conexión")
-    monkeypatch.setattr("energy_project.descarga.urlopen", fallar)
+    monkeypatch.setattr("src.descarga.urlopen", fallar)
     salida = tmp_path / "fallida"
     with pytest.raises(ValueError, match="Open-Meteo"):
         descargar_irradiancia(ruta_config, salida, "2025-01-06", "2025-01-07")

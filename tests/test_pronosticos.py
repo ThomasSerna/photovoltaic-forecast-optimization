@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from energy_project.pronosticos import (
+from src.pronosticos import (
     cargar_chronos, corregir_cuantiles, mascara_noche, pronosticar_chronos,
 )
 

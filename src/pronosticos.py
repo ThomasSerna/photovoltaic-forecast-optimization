@@ -325,7 +325,7 @@ def ensayo_chronos(caso, salida):
         },
         "entradas_sha256": entradas_sha256(caso.rutas), "codigo_sha256": codigo_sha256(),
         "entorno": versiones,
-        "uv_lock_sha256": sha256_de(Path(__file__).resolve().parents[2] / "uv.lock"),
+        "uv_lock_sha256": sha256_de(Path(__file__).resolve().parents[1] / "uv.lock"),
         "hardware": {"arquitectura": platform.machine(), "procesador": platform.processor(),
                      "cpu_logicos": os.cpu_count(), "ram_total_bytes": psutil.virtual_memory().total},
         "supuestos": ["ERA5: reanálisis, disponible idealmente al cierre de la hora",

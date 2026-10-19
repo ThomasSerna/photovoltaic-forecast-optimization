@@ -24,10 +24,10 @@ pronosticos = [
 dev = ["pytest>=8"]
 
 [project.scripts]
-energy-project = "energy_project.cli:main"
+energy-project = "src.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+packages = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

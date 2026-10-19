@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from energy_project.configuracion import cargar_configuracion
-from energy_project.demanda import (
+from src.configuracion import cargar_configuracion
+from src.demanda import (
     Franja, ObjetivoDia, energia_franja, factor_de_asignacion, generar_demanda, horas_solapadas,
     perfil_nevera, referencias_del_medidor, sortear_objetivo,
 )

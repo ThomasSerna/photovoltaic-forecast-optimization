@@ -7,8 +7,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from energy_project import cargar_caso
-from energy_project.simulador import _despachar, _energia_fotovoltaica, _limite_descarga, simular
+from src import cargar_caso
+from src.simulador import _despachar, _energia_fotovoltaica, _limite_descarga, simular
 
 
 @pytest.fixture

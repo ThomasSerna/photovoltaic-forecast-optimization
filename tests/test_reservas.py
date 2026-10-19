@@ -5,7 +5,7 @@ from copy import deepcopy
 import pandas as pd
 import pytest
 
-from energy_project.simulador import simular
+from src.simulador import simular
 
 
 def _bateria(id_="a", **cambios):

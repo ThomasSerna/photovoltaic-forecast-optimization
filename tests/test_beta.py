@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 beta = pytest.importorskip("scipy.stats").beta
 
-from energy_project.pronosticos import pronosticar_beta
+from src.pronosticos import pronosticar_beta
 
 
 ORIGEN = pd.Timestamp("2025-01-06T00:00:00-05:00")

@@ -9,8 +9,8 @@ import pytest
 
 pytest.importorskip("astral")
 
-from energy_project import controlador
-from energy_project.pronosticos import contexto_admisible
+from src import controlador
+from src.pronosticos import contexto_admisible
 
 
 ORIGEN = pd.Timestamp("2025-01-06T11:00:00-05:00").tz_convert("UTC")

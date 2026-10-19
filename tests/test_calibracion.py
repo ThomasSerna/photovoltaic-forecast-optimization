@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from energy_project import controlador
-from energy_project.simulador import simular
+from src import controlador
+from src.simulador import simular
 from test_controlador import ORIGEN, _caso, _cuantiles
 
 
@@ -144,7 +144,7 @@ def publicacion(tmp_path, monkeypatch):
     salida = tmp_path / "salida"
     ensayo = dict(lambda_terminal=0.75, tabla=pd.DataFrame([dict(J=1.)]), pronosticos={},
                   inicio_utc=ORIGEN, fin_utc=ORIGEN + pd.Timedelta(hours=2))
-    monkeypatch.setattr("energy_project.datos.cargar_caso", lambda ruta: caso)
+    monkeypatch.setattr("src.datos.cargar_caso", lambda ruta: caso)
     monkeypatch.setattr(controlador, "calibrar_mpc", lambda caso: ensayo)
     monkeypatch.setattr(importlib.metadata, "version", lambda paquete: "prueba")
     monkeypatch.setattr(sys, "argv", ["controlador", "--config", str(config), "--salida", str(salida)])
@@ -182,7 +182,7 @@ def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(publi
         monkeypatch.setattr(Path, "replace", fallar_reemplazo)
     else:
         hashes = iter([{"controlador.py": "original"}, {"controlador.py": "editado"}])
-        monkeypatch.setattr("energy_project.cli.codigo_sha256", lambda: next(hashes))
+        monkeypatch.setattr("src.cli.codigo_sha256", lambda: next(hashes))
     with pytest.raises(SystemExit) as error:
         controlador.main()
     assert error.value.code == 1

@@ -50,7 +50,7 @@ de reanálisis de la celda cercana a la escuela, no una medición local.
 ## Modelo de la demanda sintética
 
 La demanda sintética es una adaptación del proyecto (IDEA.md, sección 3), no una ecuación
-del paper. Su código está en `src/energy_project/demanda.py`. Las ecuaciones se numeran (D1)–(D5)
+del paper. Su código está en `src/demanda.py`. Las ecuaciones se numeran (D1)–(D5)
 para no confundirlas con las (1)–(10) del paper. Notación: `d` es el día desde 0 (lunes), `h` la
 hora local, `t = 24d + h`, `K` el conjunto de las 13 cargas, `nev` la nevera (la única permanente)
 y `K' = K∖{nev}`. De cada carga `k` se usan la potencia `P_k` (W), la ventana de uso
@@ -197,7 +197,7 @@ el simulador y la calibración. La evaluación final corresponde a T05.
 
 ## Nuevas adquisiciones solares
 
-El descargador opcional `python -m energy_project.descarga`, ejecutado mediante
+El descargador opcional `python -m src.descarga`, ejecutado mediante
 uv, consulta [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
 con `models=era5`, `hourly=shortwave_radiation`, `timezone=GMT` y
 `timeformat=unixtime`. La radiación es el promedio de la **hora precedente**:

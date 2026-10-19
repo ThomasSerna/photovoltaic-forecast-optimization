@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from energy_project.configuracion import validar_demanda
-from energy_project.demanda import generar_calendario, generar_demanda
-from energy_project.generacion import generar_archivos
+from src.configuracion import validar_demanda
+from src.demanda import generar_calendario, generar_demanda
+from src.generacion import generar_archivos
 
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -135,7 +135,7 @@ def test_generacion_respeta_rutas_individuales_sin_salida(tmp_path):
     generar_archivos(ruta_config)
     assert Path(config["datos"]["catalogo"]).exists()
     assert not (tmp_path / "datos/catalogo_cargas.csv").exists()
-    from energy_project import cargar_caso
+    from src import cargar_caso
     assert len(cargar_caso(ruta_config).catalogo) == 13
     antes = {ruta: ruta.read_bytes() for ruta in tmp_path.rglob("*") if ruta.is_file()}
     generar_archivos(ruta_config)

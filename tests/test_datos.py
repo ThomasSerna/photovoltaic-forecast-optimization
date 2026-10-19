@@ -9,8 +9,8 @@ import sys
 import pandas as pd
 import pytest
 
-from energy_project import cargar_caso, historial_admisible
-from energy_project.configuracion import cargar_configuracion
+from src import cargar_caso, historial_admisible
+from src.configuracion import cargar_configuracion
 
 RAIZ = Path(__file__).resolve().parents[1]
 CONFIG = RAIZ / "scripts/configuracion.json"
@@ -176,7 +176,7 @@ def test_solar_simulacion_debe_coincidir_con_historico(configuracion):
 
 def test_cli_y_resumen(tmp_path):
     salida = tmp_path / "informe.json"
-    proceso = subprocess.run([sys.executable, "-m", "energy_project.cli", "--config", str(CONFIG),
+    proceso = subprocess.run([sys.executable, "-m", "src.cli", "--config", str(CONFIG),
                               "--salida", str(salida)], capture_output=True, encoding="utf-8")
     assert proceso.returncode == 0, proceso.stderr
     informe = json.loads(salida.read_text(encoding="utf-8"))
@@ -184,7 +184,7 @@ def test_cli_y_resumen(tmp_path):
     assert informe["max_error_conservacion_wh"] < 0.001
     assert informe["semillas"] == {"demanda": 20261018, "escenarios": 20261019}
     assert len(informe["entradas_sha256"]) == 10
-    proceso = subprocess.run([sys.executable, "-m", "energy_project.cli", "--config", str(tmp_path / "no_existe.json")],
+    proceso = subprocess.run([sys.executable, "-m", "src.cli", "--config", str(tmp_path / "no_existe.json")],
                              capture_output=True, encoding="utf-8")
     assert proceso.returncode == 1
     assert "no_existe.json" in proceso.stderr
@@ -194,7 +194,7 @@ def test_cli_y_resumen(tmp_path):
 def test_informe_no_sobrescribe_entradas(configuracion):
     _, ruta = configuracion
     antes = ruta.read_bytes()
-    proceso = subprocess.run([sys.executable, "-m", "energy_project.cli", "--config", str(ruta),
+    proceso = subprocess.run([sys.executable, "-m", "src.cli", "--config", str(ruta),
                               "--salida", str(ruta)], capture_output=True, encoding="utf-8")
     assert proceso.returncode == 1
     assert "no puede reemplazar" in proceso.stderr
