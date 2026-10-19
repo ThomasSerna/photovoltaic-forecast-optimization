@@ -1,16 +1,203 @@
 # Pronósticos de Chronos-2 frente a una referencia beta en la planificación de un sistema fotovoltaico aislado
 
-**Borrador de las secciones de método, resultados, discusión y conclusiones (T05).**
+**Borrador del artículo del curso Optimización 1 (T05).**
 Caso semisintético contextualizado en el Centro Educativo Rural El Rayo, Támesis
 (Antioquia). Integrantes: Thomas Serna, Juan Esteban Palacio y Jeronimo Gutierrez.
 
-> Estado: borrador generado a partir de `results/t05_evaluacion/` (regenerable con el
-> comando de la sección 2.6). Introducción y revisión de literatura quedan a cargo del
-> equipo; aquí solo se fijan el método y los resultados reproducibles.
+> Estado: borrador. Las secciones 3 a 6 se generaron a partir de
+> `results/t05_evaluacion/` (regenerable con el comando de la sección 3.6). El resumen,
+> la introducción y la revisión de literatura se redactaron a partir de `docs/IDEA.md`,
+> de Acuña et al. (2021) y de la ficha de Chronos-2; el equipo debe revisarlos antes de
+> la entrega.
 
-## 2. Método
+## Resumen
 
-### 2.1. Pregunta y diseño
+En las zonas no interconectadas hay que decidir qué cargas atender con una irradiancia
+incierta. Este trabajo adapta el modelo de planificación operativa de Acuña et al.
+(2021) a un sistema fotovoltaico aislado hipotético, contextualizado en una escuela
+rural de Támesis (Antioquia), y evalúa si sustituir una referencia probabilística beta
+por los pronósticos *zero-shot* del modelo fundacional Chronos-2 mejora la atención de
+cargas. Ambas alternativas comparten física, demanda sintética, escenarios con números
+aleatorios comunes y un control predictivo heurístico que replanifica cada 6 h con un
+horizonte de 24 h. En la evaluación reservada, del 3 al 30 de marzo de 2025, Chronos-2
+redujo el MAE diurno de la irradiancia en un 3,2 % (9,3 % en las seis horas ejecutadas)
+y acercó la cobertura del intervalo 0,1–0,9 a la nominal (80,95 % frente a 76,98 %).
+La demanda ponderada atendida, en cambio, solo aumentó un 0,18 % (+0,16 p.p. de
+S_pond), con diferencias concentradas en 4 de los 28 días. Las cargas críticas se
+atendieron por completo con ambos pronósticos y no hubo violaciones físicas ni
+filtraciones de información futura. Estos resultados exploratorios indican que el
+diseño del controlador determina cuánto de la mejora predictiva llega al servicio.
+
+**Palabras clave:** zonas no interconectadas; energía solar; pronóstico probabilístico;
+modelos fundacionales; control predictivo; simulación-optimización.
+
+## 1. Introducción
+
+El acceso universal a servicios de energía asequibles, fiables y modernos para 2030 es
+la meta 7.1 de los Objetivos de Desarrollo Sostenible (Naciones Unidas, s. f.). En
+Colombia, una parte de la población rural sigue sin electricidad, y en las escuelas
+rurales esa carencia pone en riesgo el acceso a la educación y a otros servicios básicos
+(Acuña et al., 2021). Los sistemas fotovoltaicos con baterías son una alternativa para
+estas zonas no interconectadas, pero dependen de un recurso variable que no se puede
+controlar. Con una capacidad limitada, operar bien el sistema significa decidir, hora a
+hora, qué cargas atender y cuándo usar o reponer la energía almacenada.
+
+Acuña et al. (2021) formularon esta planificación operativa para Volcanes, una escuela
+rural de Caparrapí (Cundinamarca), como un problema integrado de despacho y selección de
+cargas (*unit commitment*). El objetivo es maximizar la demanda atendida ponderada por
+prioridad. Como el modelo exacto no encontró soluciones enteras en horizontes de una
+semana, propusieron una heurística rápida y la integraron en un esquema de
+simulación-optimización. La irradiancia se modela como una variable aleatoria beta, la
+heurística resuelve cada réplica y se elige la solución determinista más frecuente. En
+sus experimentos, la solución estocástica alcanza mejores niveles de servicio que la
+determinista, que puede sobrestimar la capacidad del sistema. Los autores mencionan el
+control predictivo como una aplicación futura del método.
+
+En paralelo, los modelos fundacionales para series de tiempo ofrecen otra forma de
+obtener pronósticos. Modelos preentrenados con grandes colecciones de series, como
+Chronos, TimesFM y Moirai, pronostican series nuevas sin entrenamiento específico
+(*zero-shot*) (Ansari et al., 2024; Das et al., 2024; Woo et al., 2024). Chronos-2
+extiende este enfoque a problemas multivariados y con covariables, entrega cuantiles
+para varios pasos y puede ejecutarse en CPU (Ansari et al., 2025; Amazon, s. f.). En un
+sistema aislado, esto permite sustituir una distribución ajustada por hora del día por
+un pronóstico condicionado a la secuencia reciente de observaciones, sin entrenar un
+modelo propio. Sin embargo, la calidad de un pronóstico y su valor para una decisión son
+propiedades distintas (Murphy, 1993). Un error menor no garantiza mejores decisiones
+cuando el pronóstico alimenta un problema de optimización (Elmachtoub y Grigas, 2022).
+
+Este trabajo pregunta si la información predictiva de Chronos-2 mejora la atención de
+cargas de un sistema fotovoltaico aislado frente a una referencia probabilística beta,
+cuando la física, la demanda, el estado inicial y la estrategia de decisión son los
+mismos. Para responderlo se construye un caso semisintético: un sistema hipotético para
+el Centro Educativo Rural El Rayo, en Támesis (Antioquia), con irradiancia del
+reanálisis ERA5 (Hersbach et al., 2020) y demanda sintética. No se trata de una
+instalación real ni de un diagnóstico energético de la institución.
+
+Las contribuciones son tres:
+
+1. Una adaptación verificable del modelo de Acuña et al. (2021), con baterías
+   individuales, una interpretación física explícita de las desigualdades impresas y la
+   misma lógica de selección de cargas por prioridad.
+2. Un control predictivo heurístico común. Su generador de escenarios compartido cumple
+   el papel de los números aleatorios comunes, de modo que las dos alternativas solo
+   difieren en el modelo que pronostica la irradiancia.
+3. Una evaluación pareada y reproducible de la calidad del pronóstico y del servicio
+   energético, con comprobaciones de balances, de filtraciones de información futura y
+   de repetición.
+
+El objetivo no es reproducir numéricamente el caso Volcanes ni demostrar que Chronos-2
+es superior. El trabajo cumple su propósito si explica, con resultados verificables, si
+Chronos-2 aporta o no una mejora bajo estos supuestos. La sección 2 revisa la
+literatura; la 3 describe el método; la 4 presenta los resultados; la 5 los discute, y
+la 6 resume las conclusiones.
+
+## 2. Revisión de literatura
+
+### 2.1. Planificación operativa de sistemas aislados bajo incertidumbre
+
+El problema de Acuña et al. (2021) pertenece a una línea de trabajos que combinan
+simulación y optimización para operar sistemas renovables con almacenamiento. Mallor et
+al. (2015) gestionan la operación de estos sistemas con una metodología de simulación
+basada en optimización. Azcárate et al. (2017) incorporan un pronóstico probabilístico
+del recurso en la gestión táctica y operativa de un sistema eólico con almacenamiento.
+Figueira y Almada-Lobo (2014) proponen una taxonomía de estos métodos híbridos; en ella,
+el esquema de Acuña et al. corresponde a la simulación con iteraciones basadas en
+optimización. Juan et al. (2015) revisan las simheurísticas, que integran la simulación
+en heurísticas y metaheurísticas para problemas combinatorios estocásticos.
+
+En los sistemas aislados, el costo computacional es una restricción práctica. Micangeli
+et al. (2020) diseñan minirredes aisladas con estrategias de operación predictivas de
+bajo requerimiento computacional. Acuña et al. (2021) justifican su heurística por los
+recursos de cómputo limitados de una escuela rural.
+
+### 2.2. Modelos probabilísticos de la irradiancia
+
+La distribución beta es una representación habitual de la irradiancia en estudios de
+sistemas eléctricos con generación solar (Karaki et al., 1999; Atwa et al., 2010). Su
+soporte acotado y la variedad de formas que admite permiten representar una variable no
+negativa y asimétrica. Atwa et al. (2010) modelan la irradiancia de cada hora con una
+beta, y Acuña et al. (2021) ajustan una beta de cuatro parámetros a 39 semanas de datos
+de Volcanes, que validan con una prueba de Kolmogórov-Smirnov. Una beta por hora
+describe la distribución de cada hora del día. Por sí sola, sin embargo, no representa
+la dependencia entre horas consecutivas, que determina si un periodo nublado agota las
+baterías.
+
+El pronóstico probabilístico de la generación fotovoltaica se ha consolidado como campo
+propio. Van der Meer et al. (2018) revisan sus métodos, las formas de expresar la
+incertidumbre y su evaluación. La competencia GEFCom2014, que incluyó una categoría
+solar, evaluó los cuantiles con la pérdida *pinball* (Hong et al., 2016). Esa pérdida
+proviene de la regresión cuantílica (Koenker y Bassett, 1978) y es una regla de
+puntuación propia: su valor esperado es mínimo cuando se informan los cuantiles
+verdaderos (Gneiting y Raftery, 2007). Este trabajo la complementa con MAE, RMSE y
+cobertura, que miden por separado el error de la mediana y la calibración del intervalo.
+
+### 2.3. Escenarios y control predictivo
+
+Un controlador que anticipa necesita trayectorias completas, no solo distribuciones
+marginales por hora. Pinson et al. (2009) generan escenarios de producción eólica a
+partir de pronósticos probabilísticos marginales y modelan la dependencia entre
+anticipaciones con una cópula gaussiana. En hidrometeorología, el *Schaake shuffle*
+reordena los miembros de un conjunto según los rangos de observaciones históricas para
+recuperar su dependencia espacio-temporal (Clark et al., 2004). El generador común de
+este trabajo sigue la segunda idea: remuestrea bloques históricos de 24 h, toma sus
+rangos en cada hora del horizonte y los transforma en cuantiles de cada proveedor.
+
+El control predictivo con horizonte deslizante resuelve en cada instante de decisión un
+problema sobre un horizonte, aplica las primeras decisiones y vuelve a planificar desde
+el estado alcanzado. Parisio et al. (2014) lo aplican a la operación de una microrred
+mediante programación lineal entera mixta. Este trabajo adopta una versión heurística:
+en lugar de resolver un problema entero, compara calendarios candidatos generados con
+la heurística de Acuña et al. (2021) y los evalúa sobre los escenarios.
+
+### 2.4. Modelos fundacionales para series de tiempo
+
+Chronos convierte cada serie en una secuencia de símbolos mediante escalamiento y
+cuantización, y entrena con ellos arquitecturas de lenguaje T5 con pérdida de entropía
+cruzada. Tras preentrenarse con datos públicos y series sintéticas, pronostica series no
+vistas sin entrenamiento adicional (Ansari et al., 2024). TimesFM usa un transformador
+de solo decodificador sobre parches de la serie (Das et al., 2024). Moirai es un
+transformador con codificador enmascarado, entrenado con un archivo abierto de series de
+nueve dominios (Woo et al., 2024).
+
+Chronos-2 es un modelo de solo codificador, con unos 120 millones de parámetros. Su
+mecanismo de atención por grupos le permite aprender en contexto de series relacionadas
+y de covariables. Emite cuantiles para varios pasos, y sus autores informan resultados
+de vanguardia en las evaluaciones fev-bench, GIFT-Eval y Chronos Benchmark II (Ansari et
+al., 2025; Amazon, s. f.). Estas evaluaciones miden el error de pronóstico sobre muchas
+series, no el efecto del pronóstico en una decisión operativa. Además, como el
+preentrenamiento combina colecciones públicas y series sintéticas, no puede descartarse
+que el modelo haya visto series semejantes a las de evaluación. Este trabajo usa
+Chronos-2 en su forma más simple: univariado, sin covariables y con el checkpoint
+oficial sin ajuste.
+
+### 2.5. Calidad del pronóstico y valor para la decisión
+
+Murphy (1993) distingue tres sentidos en que un pronóstico es bueno: consistencia con el
+juicio de quien pronostica, calidad frente a lo observado y valor para quien decide. La
+calidad no implica valor, porque el beneficio depende del problema de decisión y de cómo
+se usa el pronóstico. La analítica prescriptiva formaliza esta idea. Bertsimas y Kallus
+(2020) prescriben decisiones directamente a partir de datos auxiliares, adaptando
+métodos de aprendizaje automático a la optimización condicionada. Elmachtoub y Grigas
+(2022) proponen entrenar los modelos con la pérdida que induce la decisión en lugar del
+error de predicción. En la planificación de un sistema aislado, esto significa que una
+mejora en MAE o *pinball* debe juzgarse por su efecto en la demanda atendida.
+
+### 2.6. Brecha y posición de este trabajo
+
+Los trabajos revisados abordan piezas de este problema: el modelado de la irradiancia,
+el pronóstico probabilístico, la generación de escenarios y el control. Las
+evaluaciones de los modelos fundacionales miden sobre todo precisión. Los métodos de
+simulación-optimización para sistemas aislados se han apoyado en distribuciones
+ajustadas a la historia. La búsqueda realizada para este borrador no fue sistemática y
+no identificó estudios revisados por pares que integren un modelo fundacional
+*zero-shot* en la operación de un sistema fotovoltaico aislado con prioridades de carga.
+Este trabajo aborda esa combinación con un diseño pareado: mismo sistema, mismos
+escenarios y mismo controlador, de modo que las diferencias de servicio puedan
+atribuirse al pronóstico.
+
+## 3. Método
+
+### 3.1. Pregunta y diseño
 
 Bajo la misma física, demanda, estado inicial y estrategia de decisión, ¿mejora la
 información predictiva de Chronos-2 la atención de cargas de un sistema fotovoltaico
@@ -24,7 +211,7 @@ controlador, simulador, métricas y la meteorología realizada que las evalúa.
 | A — beta | Mezcla, por hora local, de masa en cero y beta de dos parámetros (loc = 0, escala = 1,05 × máximo positivo) ajustada por máxima verosimilitud sobre las últimas 336 h | Idéntico |
 | B — Chronos-2 | Cuantiles 0,1–0,9 del checkpoint oficial `amazon/chronos-2` (revisión `29ec376…`), sin entrenamiento, con las mismas 336 h | Idéntico |
 
-### 2.2. Datos
+### 3.2. Datos
 
 - **Irradiancia:** GHI media horaria de reanálisis ERA5 (Open-Meteo) para las
   coordenadas de la escuela, 2024–2025 (17 544 h). Se usa como referencia
@@ -38,7 +225,7 @@ controlador, simulador, métricas y la meteorología realizada que las evalúa.
   calibración usa solo la semana del 6 al 12 de enero. La evaluación reservada va del
   3 al 30 de marzo de 2025 (672 h). Ningún parámetro se ajustó con fechas de evaluación.
 
-### 2.3. Modelo físico (adaptado de Acuña et al., 2021, §2.2)
+### 3.3. Modelo físico (adaptado de Acuña et al., 2021, §2.2)
 
 Con paso Δt = 1 h y energías en Wh, la generación es
 E_t^FV = min(P_inv,max, P_STC · G_t/1000 · f) · Δt, con P_STC = 2000 W, f = 0,85 y
@@ -65,7 +252,7 @@ indicador de solicitud. La selección de cargas sigue los algoritmos 1–2 en un
 pasada: orden por prioridad, energía e identificador, servicio completo si cabe en
 energía y potencia, y un único despacho por identificador de batería.
 
-### 2.4. Escenarios y control predictivo común
+### 3.4. Escenarios y control predictivo común
 
 En cada origen (cada R = 6 h), cada proveedor emite cuantiles para H = 24 h, que
 reciben la misma corrección: reordenamiento, no negatividad y cero en intervalos
@@ -94,7 +281,7 @@ conocer de antemano la energía FV de la hora en curso, de modo que es una refer
 con información perfecta de la hora y no una alternativa admisible. No interviene en
 la diferencia principal B − A.
 
-### 2.5. Indicadores
+### 3.5. Indicadores
 
 | Tipo | Indicador | Definición |
 |---|---|---|
@@ -114,7 +301,7 @@ día local. Con 28 días, una sola realización meteorológica y demanda sintét
 describe su distribución (media, mediana, extremos, días a favor y en contra) sin
 pruebas de significancia.
 
-### 2.6. Verificación y reproducibilidad
+### 3.6. Verificación y reproducibilidad
 
 El comando
 
@@ -133,14 +320,14 @@ ejecuta A, B y la referencia con el entorno fijado en `uv.lock`. Verifica:
 
 Si alguna comprobación falla, no publica `resumen.json`.
 
-## 3. Resultados
+## 4. Resultados
 
 Los valores proceden de la ejecución verificada el 19 de octubre de 2026
 (`results/t05_evaluacion_verificada/`). Esa carpeta está excluida de Git y se
 regenera con el comando anterior en una carpeta nueva. Entorno: Python 3.12.15,
 chronos-forecasting 2.3.2, torch 2.14.1, SciPy 1.18.1 y CPU con Windows 11.
 
-### 3.1. Consistencia del experimento
+### 4.1. Consistencia del experimento
 
 - **Física.** Las tres trayectorias cumplen balances y cotas sin violaciones. El
   error máximo es de 1,2·10⁻¹³ Wh en el bus y de 2,9·10⁻¹³ Wh en batería, frente a
@@ -156,7 +343,7 @@ chronos-forecasting 2.3.2, torch 2.14.1, SciPy 1.18.1 y CPU con Windows 11.
   origen fue de 0,010 s con beta y 0,028 s con Chronos-2, y la carga de Chronos-2
   tardó 8,4 s con los pesos en caché.
 
-### 3.2. Calidad del pronóstico
+### 4.2. Calidad del pronóstico
 
 **Tabla 1.** Error de la mediana y de los cuantiles corregidos frente a ERA5
 (W/m²; 1438 pares diurnos y 2652 pares en total).
@@ -182,7 +369,7 @@ común apenas modifica los cuantiles: el pinball diurno crudo de Chronos-2 es
 *Figura 1. ERA5 realizada frente a la mediana y la banda 0,1–0,9 de cada proveedor,
 en las seis primeras horas de cada origen.*
 
-### 3.3. Servicio energético
+### 4.3. Servicio energético
 
 **Tabla 2.** Servicio realizado del 3 al 30 de marzo de 2025. La energía solicitada
 es de 148 427 Wh.
@@ -225,7 +412,7 @@ más energía de prioridad 2 y menos de prioridad 1.
 
 *Figura 3. ΔJ diario; los valores positivos favorecen a Chronos-2.*
 
-### 3.4. Baterías y decisiones
+### 4.4. Baterías y decisiones
 
 - **bateria_01.** Alcanza su mínimo físico (480 Wh) en las tres políticas: 19 h con
   beta, 18 h con Chronos-2 y 19 h con la referencia.
@@ -241,7 +428,7 @@ más energía de prioridad 2 y menos de prioridad 1.
 
 *Figura 4. Energía almacenada en cada batería al final de cada hora.*
 
-## 4. Discusión
+## 5. Discusión
 
 **Un mejor pronóstico no implica, por sí solo, más servicio.** Chronos-2 reduce el
 error de irradiancia en todas las métricas. Sin embargo, la mejora del servicio se
@@ -300,7 +487,7 @@ compartidos) y bajo la misma realización meteorológica.
 Por todo ello, los resultados son exploratorios. No se aplicaron pruebas de
 significancia ni se afirman beneficios en campo.
 
-## 5. Conclusiones
+## 6. Conclusiones
 
 1. Se ejecutó de extremo a extremo una comparación pareada y reproducible entre una
    referencia beta y Chronos-2 sin ajuste. Las dos ramas comparten física,
@@ -332,14 +519,82 @@ significancia ni se afirman beneficios en campo.
   (2021). Operational Planning of Energy for Non-Interconnected Zones: A
   Simulation-Optimization Approach and a Case Study to Tackle Energy Poverty in
   Colombia. *Energies*, 14(10), 2789. https://doi.org/10.3390/en14102789
-- Amazon. Chronos-2 (modelo `amazon/chronos-2`, revisión
+- Amazon (s. f.). Chronos-2 (ficha del modelo `amazon/chronos-2`, revisión
   `29ec3766d36d6f73f0696f85560a422f50e8498c`). https://huggingface.co/amazon/chronos-2
-- Hersbach, H. et al. (2020). The ERA5 global reanalysis. *Quarterly Journal of the
-  Royal Meteorological Society*, 146(730), 1999–2049. https://doi.org/10.1002/qj.3803
+  (consultada el 19 de octubre de 2026).
+- Ansari, A. F.; Stella, L.; Turkmen, C.; Zhang, X.; Mercado, P.; Shen, H.; Shchur, O.;
+  et al. (2024). Chronos: Learning the Language of Time Series. *Transactions on
+  Machine Learning Research*. https://openreview.net/forum?id=gerNCVqqtR
+- Ansari, A. F.; Shchur, O.; Küken, J.; Auer, A.; Han, B.; Mercado, P.; et al. (2025).
+  Chronos-2: From Univariate to Universal Forecasting. Preimpresión arXiv:2510.15821.
+  https://doi.org/10.48550/arXiv.2510.15821
+- Atwa, Y. M.; El-Saadany, E. F.; Salama, M. M. A.; Seethapathy, R. (2010). Optimal
+  Renewable Resources Mix for Distribution System Energy Loss Minimization. *IEEE
+  Transactions on Power Systems*, 25(1), 360–370.
+  https://doi.org/10.1109/TPWRS.2009.2030276
+- Azcárate, C.; Mallor, F.; Mateo, P. (2017). Tactical and operational management of
+  wind energy systems with storage using a probabilistic forecast of the energy
+  resource. *Renewable Energy*, 102, 445–456.
+  https://doi.org/10.1016/j.renene.2016.10.064
+- Bertsimas, D.; Kallus, N. (2020). From Predictive to Prescriptive Analytics.
+  *Management Science*, 66(3), 1025–1044. https://doi.org/10.1287/mnsc.2018.3253
+- Clark, M.; Gangopadhyay, S.; Hay, L.; Rajagopalan, B.; Wilby, R. (2004). The Schaake
+  Shuffle: A Method for Reconstructing Space–Time Variability in Forecasted
+  Precipitation and Temperature Fields. *Journal of Hydrometeorology*, 5(1), 243–262.
+  https://doi.org/10.1175/1525-7541(2004)005<0243:TSSAMF>2.0.CO;2
+- Das, A.; Kong, W.; Sen, R.; Zhou, Y. (2024). A decoder-only foundation model for
+  time-series forecasting. En *Proceedings of the 41st International Conference on
+  Machine Learning*, PMLR 235, 10148–10167.
+  https://proceedings.mlr.press/v235/das24c.html
+- Elmachtoub, A. N.; Grigas, P. (2022). Smart "Predict, then Optimize". *Management
+  Science*, 68(1), 9–26. https://doi.org/10.1287/mnsc.2020.3922
+- Figueira, G.; Almada-Lobo, B. (2014). Hybrid simulation–optimization methods: A
+  taxonomy and discussion. *Simulation Modelling Practice and Theory*, 46, 118–134.
+  https://doi.org/10.1016/j.simpat.2014.03.007
 - Gneiting, T.; Raftery, A. E. (2007). Strictly Proper Scoring Rules, Prediction, and
   Estimation. *Journal of the American Statistical Association*, 102(477), 359–378.
   https://doi.org/10.1198/016214506000001437
+- González, A. M. (2026). *Lineamientos del proyecto final*. Curso de Optimización 1.
+- Hersbach, H. et al. (2020). The ERA5 global reanalysis. *Quarterly Journal of the
+  Royal Meteorological Society*, 146(730), 1999–2049. https://doi.org/10.1002/qj.3803
+- Hong, T.; Pinson, P.; Fan, S.; Zareipour, H.; Troccoli, A.; Hyndman, R. J. (2016).
+  Probabilistic energy forecasting: Global Energy Forecasting Competition 2014 and
+  beyond. *International Journal of Forecasting*, 32(3), 896–913.
+  https://doi.org/10.1016/j.ijforecast.2016.02.001
+- Juan, A. A.; Faulin, J.; Grasman, S. E.; Rabe, M.; Figueira, G. (2015). A review of
+  simheuristics: Extending metaheuristics to deal with stochastic combinatorial
+  optimization problems. *Operations Research Perspectives*, 2, 62–72.
+  https://doi.org/10.1016/j.orp.2015.03.001
+- Karaki, S. H.; Chedid, R. B.; Ramadan, R. (1999). Probabilistic performance
+  assessment of autonomous solar-wind energy conversion systems. *IEEE Transactions on
+  Energy Conversion*, 14(3), 766–772. https://doi.org/10.1109/60.790949
 - Koenker, R.; Bassett, G. (1978). Regression Quantiles. *Econometrica*, 46(1), 33–50.
   https://doi.org/10.2307/1913643
+- Mallor, F.; Azcárate, C.; Blanco, R.; Mateo, P. (2015). Operational management of
+  renewable energy systems with storage using an optimisation-based simulation
+  methodology. *Journal of Simulation*, 9, 263–278. https://doi.org/10.1057/jos.2015.16
+- Micangeli, A.; Fioriti, D.; Cherubini, P.; Duenas-Martinez, P. (2020). Optimal Design
+  of Isolated Mini-Grids with Deterministic Methods: Matching Predictive Operating
+  Strategies with Low Computational Requirements. *Energies*, 13(16), 4214.
+  https://doi.org/10.3390/en13164214
+- Murphy, A. H. (1993). What Is a Good Forecast? An Essay on the Nature of Goodness in
+  Weather Forecasting. *Weather and Forecasting*, 8(2), 281–293.
+  https://doi.org/10.1175/1520-0434(1993)008<0281:WIAGFA>2.0.CO;2
+- Naciones Unidas (s. f.). Goal 7: Ensure access to affordable, reliable, sustainable
+  and modern energy for all. Departamento de Asuntos Económicos y Sociales.
+  https://sdgs.un.org/goals/goal7 (consultada el 19 de octubre de 2026).
 - Open-Meteo. Historical Weather API (ERA5). https://open-meteo.com/
-- González, A. M. (2026). *Lineamientos del proyecto final*. Curso de Optimización 1.
+- Parisio, A.; Rikos, E.; Glielmo, L. (2014). A Model Predictive Control Approach to
+  Microgrid Operation Optimization. *IEEE Transactions on Control Systems Technology*,
+  22(5), 1813–1827. https://doi.org/10.1109/TCST.2013.2295737
+- Pinson, P.; Madsen, H.; Nielsen, H. Aa.; Papaefthymiou, G.; Klöckl, B. (2009). From
+  probabilistic forecasts to statistical scenarios of short-term wind power
+  production. *Wind Energy*, 12(1), 51–62. https://doi.org/10.1002/we.284
+- Van der Meer, D. W.; Widén, J.; Munkhammar, J. (2018). Review on probabilistic
+  forecasting of photovoltaic power production and electricity consumption.
+  *Renewable and Sustainable Energy Reviews*, 81, 1484–1512.
+  https://doi.org/10.1016/j.rser.2017.05.212
+- Woo, G.; Liu, C.; Kumar, A.; Xiong, C.; Savarese, S.; Sahoo, D. (2024). Unified
+  Training of Universal Time Series Forecasting Transformers. En *Proceedings of the
+  41st International Conference on Machine Learning*, PMLR 235, 53140–53164.
+  https://proceedings.mlr.press/v235/woo24a.html
