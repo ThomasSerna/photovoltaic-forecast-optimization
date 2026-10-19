@@ -3,11 +3,14 @@
 Las fórmulas y la numeración (D1)-(D5) están en docs/datos.md, sección «Modelo de la demanda sintética».
 """
 
+from pathlib import Path
+
 import pytest
 
+from energy_project.configuracion import cargar_configuracion
 from energy_project.demanda import (
-    Franja, ObjetivoDia, energia_franja, factor_de_asignacion, horas_solapadas, perfil_nevera,
-    referencias_del_medidor, sortear_objetivo,
+    Franja, ObjetivoDia, energia_franja, factor_de_asignacion, generar_demanda, horas_solapadas,
+    perfil_nevera, referencias_del_medidor, sortear_objetivo,
 )
 
 
@@ -65,6 +68,47 @@ def test_factor_de_asignacion_d4():
     for objetivo_wh in (-1., 300.01):  # negativo o por encima de la capacidad: no se recorta, se rechaza
         with pytest.raises(ValueError, match="Demanda incompatible"):
             factor_de_asignacion(franjas, objetivo_wh)
+
+
+@pytest.mark.parametrize(("objetivo_wh", "factor_esperado"), [(50., 500.), (100., 1000.)])
+def test_factor_de_asignacion_amplia_cota_para_pesos_pequenos(objetivo_wh, factor_esperado):
+    """D(κ) = 100·min(1, κ·0.001): 50 Wh exige κ=500 y 100 Wh exige κ=1000."""
+    franja = Franja("a", 8, 100., 0.001)
+    factor = factor_de_asignacion([franja], objetivo_wh)
+    assert factor == pytest.approx(factor_esperado)
+    assert energia_franja(franja, factor) == pytest.approx(objetivo_wh)
+
+
+def test_factor_de_asignacion_sin_demanda():
+    assert factor_de_asignacion([], 0.) == 0.
+    assert factor_de_asignacion([Franja("a", 8, 100., 0.001)], 0.) == 0.
+
+
+def test_factor_de_asignacion_con_pesos_de_distintas_magnitudes():
+    franjas = [Franja("a", 8, 100., 0.001), Franja("b", 8, 100., 1e-100)]
+    factor = factor_de_asignacion(franjas, 50.)
+    assert factor == pytest.approx(500.)
+    assert sum(energia_franja(franja, factor) for franja in franjas) == pytest.approx(50.)
+
+
+def test_factor_de_asignacion_cerca_del_limite_numerico():
+    franja = Franja("a", 8, 100., 5e-309)
+    factor = factor_de_asignacion([franja], 50.)
+    assert factor == pytest.approx(1e308)
+    assert energia_franja(franja, factor) == pytest.approx(50.)
+    with pytest.raises(ValueError, match="rango numérico"):
+        factor_de_asignacion([Franja("a", 8, 100., 1e-320)], 50.)
+
+
+def test_demanda_con_ocupaciones_pequenas_conserva_objetivo():
+    config = cargar_configuracion(Path(__file__).resolve().parents[1] / "scripts/configuracion.json")
+    for carga in config["cargas"]:
+        if not carga["permanente"]:
+            carga["ocupacion_base_supuesta"] = 0.001
+    _, _, diaria = generar_demanda(config)
+    assert any(fila["factor_asignacion"] > 100 for fila in diaria)
+    for fila in diaria:
+        assert abs(fila["demanda_total_wh"] - fila["objetivo_wh"]) <= 0.001
 
 
 def test_objetivo_del_dia_d1_y_orden_de_sorteos():

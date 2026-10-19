@@ -84,7 +84,9 @@ solo en días lectivos; `ℓ` es el número de horas de la franja `[h, h+1)` den
 \sum_{k\in K',\,h}D_{k,h}(\kappa_d)=D_d-D^{\mathrm{nev}}_d .
 \]
 
-La suma crece con `κ`, así que `κ_d` se busca por bisección en `[0, 100]` con 90 iteraciones.
+La suma crece con `κ`, así que `κ_d` se busca por bisección con 90 iteraciones. Se conserva
+`[0, 100]` si alcanza el objetivo; si no, se duplica la cota superior hasta cubrirlo.
+Una cota que exceda el rango numérico produce un error. Si el objetivo es cero, `κ_d = 0`.
 Existe solución si `0 ≤ D_d − D^nev_d ≤ Σ D^max`; si no, el generador falla: no recorta la demanda
 ni añade cargas ocultas. En fin de semana solo hay nevera y `κ_d = 0`.
 

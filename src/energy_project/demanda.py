@@ -14,6 +14,7 @@ Procedimiento para cada día (ver docs/IDEA.md y docs/datos.md):
    las cargas no permanentes, sin superar potencia × horas disponibles. Si no cabe, se lanza
    un error: no se recorta la demanda ni se añaden cargas ocultas.
 """
+import math
 import random
 from datetime import date, datetime, timedelta
 from typing import NamedTuple
@@ -57,7 +58,7 @@ NOCHE_FIN_H = 7
 PESO_NOCTURNO_NEVERA = 0.8
 RUIDO_NEVERA = (0.9, 1.1)  # ε_h ~ U[0.9, 1.1]: un sorteo por hora de la nevera
 RUIDO_OCUPACION = (0.85, 1.15)  # ξ_{k,h} ~ U[0.85, 1.15]: un sorteo por franja carga-hora
-FACTOR_MAXIMO = 100.  # cota superior de la bisección de κ_d (ver factor_de_asignacion)
+COTA_INICIAL_FACTOR = 100.  # cota superior inicial de la bisección de κ_d
 ITERACIONES_BISECCION = 90
 DECIMALES_WH = 6  # la energía publicada (Wh) se redondea a 6 decimales
 DECIMALES_FACTOR = 9  # los factores y las horas equivalentes, a 9
@@ -176,19 +177,24 @@ def energia_franja(franja, factor):
 def factor_de_asignacion(franjas, objetivo_wh):
     """Factor κ con el que la energía asignada al conjunto de franjas suma objetivo_wh.
 
-    La energía asignada no decrece al aumentar κ, así que este se busca por bisección en
-    [0, FACTOR_MAXIMO] con ITERACIONES_BISECCION iteraciones y se devuelve el último punto medio.
+    Se conserva la cota inicial cuando alcanza el objetivo; si no, se duplica hasta
+    cubrirlo. La bisección usa ITERACIONES_BISECCION iteraciones y devuelve el último
+    punto medio.
     Falla si el objetivo es negativo o supera la capacidad total. Ecuación (D4).
     """
     capacidad_total_wh = sum(franja.capacidad_wh for franja in franjas)
     if not 0 <= objetivo_wh <= capacidad_total_wh:
         raise ValueError("Demanda incompatible con potencias/horarios supuestos. "
                          "Revisar configuracion; no se recorta la demanda.")
-    # ponytail: FACTOR_MAXIMO = 100 satura toda franja con ω ≥ 0.01. Si un objetivo exigiera un κ mayor,
-    # no se alcanzaría y comprobar_conservacion fallaría. Mejora: cota 1 / min(ω), que satura todas.
-    bajo, alto = 0., FACTOR_MAXIMO
+    if objetivo_wh == 0:
+        return 0.
+    bajo, alto = 0., COTA_INICIAL_FACTOR
+    while sum(energia_franja(franja, alto) for franja in franjas) < objetivo_wh:
+        alto *= 2
+        if not math.isfinite(alto):
+            raise ValueError("Demanda incompatible: la cota del factor de asignación excede el rango numérico")
     for _ in range(ITERACIONES_BISECCION):
-        factor = (bajo + alto) / 2
+        factor = bajo / 2 + alto / 2
         asignada_wh = sum(energia_franja(franja, factor) for franja in franjas)
         if asignada_wh < objetivo_wh:
             bajo = factor
