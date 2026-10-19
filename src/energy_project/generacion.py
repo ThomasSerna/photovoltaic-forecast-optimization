@@ -129,27 +129,50 @@ def escribir_resumenes(destino, validacion, salidas):
     (destino / "sha256.json").write_text(json.dumps(hashes, indent=2) + "\n", encoding="utf-8")
 
 
+def validar_destinos(ruta_config, rutas, salidas, destino):
+    """Impide colisiones con configuración, otras tablas y manifiestos antes de publicar.
+
+    Una tabla solo puede reemplazar su propia entrada: así se permite regenerar en sitio.
+    """
+    manifiestos = [(nombre, (destino / nombre).resolve())
+                   for nombre in ("validacion.json", "sha256.json")]
+    destinos = [*salidas.items(), *manifiestos]
+    rutas_destino = [ruta for _, ruta in destinos]
+    if len(set(rutas_destino)) != len(rutas_destino):
+        raise ValueError("salida: colisión de destinos entre tablas o manifiestos")
+    if ruta_config in rutas.values() or ruta_config in rutas_destino:
+        raise ValueError("salida: ninguna tabla ni manifiesto puede reemplazar la configuración")
+    entradas = {ruta: clave for clave, ruta in rutas.items()}
+    for clave, ruta in destinos:
+        if ruta in entradas and entradas[ruta] != clave:
+            raise ValueError(f"salida: {clave} no puede reemplazar la entrada {entradas[ruta]}: {ruta}")
+
+
 def generar_archivos(ruta_config, salida=None):
     """Regenera el caso en la carpeta elegida y devuelve su resumen de validación.
 
-    Todo se calcula y valida en memoria antes de escribir: si algo falla, no se publica nada.
+    Resuelve y comprueba todos los destinos, incluidas salidas y manifiestos, antes de escribir.
+    La configuración y las otras entradas se protegen; se permite regenerar cada tabla en sitio.
+    Los datos se calculan y validan en memoria antes de publicarlos.
     """
     ruta_config = Path(ruta_config).resolve()
     config = cargar_configuracion(ruta_config)
-    horaria, por_carga, diaria = generar_demanda(config)
-    calendario = generar_calendario(config)
     rutas = {clave: (ruta_config.parent / valor).resolve() for clave, valor in config["datos"].items()}
     nombres = {clave: ruta.name for clave, ruta in rutas.items()}
     if len(set(nombres.values())) != len(nombres):
         raise ValueError(f"{ruta_config}: datos: los nombres de los archivos deben ser distintos")
+    destino = Path(salida).resolve() if salida is not None else rutas["demanda"].parent
+    salidas = {clave: (destino / nombres[clave]).resolve() if salida is not None else ruta
+               for clave, ruta in rutas.items()}
+    validar_destinos(ruta_config, rutas, salidas, destino)
+    horaria, por_carga, diaria = generar_demanda(config)
+    calendario = generar_calendario(config)
     tablas = dict(horaria=horaria, demanda=por_carga, diaria=diaria, catalogo=config["cargas"],
                   lecturas=filas_lecturas(config["lecturas"]), intervalos=filas_intervalos(config["lecturas"]),
                   calendario=calendario,
                   irradiancia_simulacion=ventana_solar(rutas["irradiancia_historica"], config, calendario))
-    destino = Path(salida).resolve() if salida is not None else rutas["demanda"].parent
-    salidas = {clave: destino / nombres[clave] if salida is not None else ruta for clave, ruta in rutas.items()}
-    publicar_tablas(tablas, rutas, salidas)
     validacion = resumen_validacion(config, horaria, por_carga, diaria)
+    publicar_tablas(tablas, rutas, salidas)
     escribir_resumenes(destino, validacion, salidas)
     return validacion
 

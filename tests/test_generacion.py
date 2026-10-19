@@ -137,3 +137,49 @@ def test_generacion_respeta_rutas_individuales_sin_salida(tmp_path):
     assert not (tmp_path / "datos/catalogo_cargas.csv").exists()
     from energy_project import cargar_caso
     assert len(cargar_caso(ruta_config).catalogo) == 13
+    antes = {ruta: ruta.read_bytes() for ruta in tmp_path.rglob("*") if ruta.is_file()}
+    generar_archivos(ruta_config)
+    assert {ruta: ruta.read_bytes() for ruta in antes} == antes
+
+
+@pytest.mark.parametrize("conflicto", [
+    "configuracion", "validacion.json", "sha256.json",
+    "salida_configuracion", "salida_manifiesto", "salida_tablas", "manifiesto_configuracion",
+])
+def test_destinos_en_conflicto_se_rechazan_sin_escribir(tmp_path, conflicto):
+    config = configuracion()
+    datos = tmp_path / "datos"
+    datos.mkdir()
+    config["datos"] = {clave: str(datos / Path(valor).name)
+                       for clave, valor in config["datos"].items()}
+    ruta_config = tmp_path / "configuracion.json"
+    salida = None
+    if conflicto == "configuracion":
+        config["datos"]["catalogo"] = str(ruta_config)
+    elif conflicto in ("validacion.json", "sha256.json"):
+        config["datos"]["catalogo"] = str(datos / conflicto)
+    elif conflicto == "salida_configuracion":
+        config["datos"]["catalogo"] = str(datos / ruta_config.name)
+        salida = tmp_path
+    elif conflicto == "salida_manifiesto":
+        config["datos"]["catalogo"] = str(datos / "validacion.json")
+        salida = tmp_path / "salida"
+    elif conflicto == "manifiesto_configuracion":
+        ruta_config = tmp_path / "validacion.json"
+        salida = tmp_path
+    else:
+        config["datos"]["catalogo"] = str(datos / "otro.csv")
+        salida = tmp_path
+        config["datos"]["diaria"] = str(salida / "otro.csv")
+    for clave, ruta in config["datos"].items():
+        Path(ruta).write_bytes(f"entrada {clave}".encode())
+    ruta_config.write_text(json.dumps(config), encoding="utf-8")
+    antes = {ruta: ruta.read_bytes() for ruta in tmp_path.rglob("*") if ruta.is_file()}
+
+    with pytest.raises(ValueError, match="colisión|configuración|reemplazar la entrada|nombres"):
+        generar_archivos(ruta_config, salida)
+
+    despues = {ruta: ruta.read_bytes() for ruta in tmp_path.rglob("*") if ruta.is_file()}
+    assert despues == antes
+    if salida == tmp_path / "salida":
+        assert not salida.exists()

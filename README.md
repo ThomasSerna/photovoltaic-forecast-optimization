@@ -354,6 +354,9 @@ uv run python scripts/generar_datos.py --config scripts/configuracion.json --sal
 
 El generador reutiliza el histórico local para calendario y solar de simulación;
 no necesita red. Rechaza una demanda que no cabe en los horarios y potencias.
+Antes de escribir comprueba los destinos, incluido `--salida`: ninguna tabla
+puede reemplazar la configuración, otra entrada ni los manifiestos
+`validacion.json` y `sha256.json`. Se permite regenerar cada tabla en su propia ruta.
 Los datos y la semilla deben concordar: si cambian los supuestos de demanda,
 hay que regenerar explícitamente los derivados antes de validarlos.
 
