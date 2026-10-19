@@ -1,12 +1,15 @@
 """Evaluación pareada de T05 con dobles: métricas a mano, pareo, filtraciones y repetición."""
 
+import json
 import math
+import sys
 
 import numpy as np
 import pandas as pd
 import pytest
 
 pytest.importorskip("astral")
+pytest.importorskip("matplotlib")
 
 from src import experimento
 from src.simulador import simular
@@ -180,3 +183,61 @@ def test_reproducibilidad_detecta_un_pronosticador_inestable():
     evaluacion = experimento.evaluar(caso, pronosticadores)
     with pytest.raises(ValueError, match="reproducibilidad: chronos"):
         experimento.verificar_reproducibilidad(caso, pronosticadores, evaluacion)
+
+
+@pytest.fixture
+def comando(tmp_path, monkeypatch):
+    """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
+    caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
+    caso.configuracion["semilla"] = 20261018
+    caso.configuracion["pronosticos"].update(revision="a" * 40, dispositivo="cpu")
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps(caso.configuracion), encoding="utf-8")
+    caso.rutas = {"configuracion": config}
+    dobles = {"beta": _constante(0.), "chronos": _constante(1000.)}
+    monkeypatch.setattr("src.datos.cargar_caso", lambda ruta: caso)
+    monkeypatch.setattr("src.pronosticos.cargar_chronos", lambda revision, dispositivo: object())
+    monkeypatch.setattr("src.controlador.proveedores", lambda caso, pipeline: dobles)
+    salida = tmp_path / "t05"
+    monkeypatch.setattr(sys, "argv", ["experimento", "--config", str(config), "--salida", str(salida)])
+    return config, salida, config.read_bytes()
+
+
+def test_comando_exporta_tabla_graficas_y_registro_sin_tocar_entradas(comando):
+    config, salida, original = comando
+    experimento.main()
+    assert config.read_bytes() == original
+    for nombre in ("cargas", "horas", "baterias", "decisiones", "pronosticos", "diario", "tabla_ab"):
+        assert (salida / f"{nombre}.csv").stat().st_size > 0
+    for nombre in ("irradiancia", "demanda_atendida", "baterias", "diferencias_diarias"):
+        assert (salida / "figuras" / f"{nombre}.png").stat().st_size > 0
+    informe = json.loads((salida / "resumen.json").read_text(encoding="utf-8"))
+    verificaciones = informe["verificaciones"]
+    assert {f["violaciones_fisicas"] for f in verificaciones["fisica"].values()} == {0}
+    assert verificaciones["pareo"]["filtraciones"] == 0 and verificaciones["reproducibilidad"]["coincide"]
+    assert informe["metricas"]["beta"]["reservas_elegidas"] == {"0.25": 1, "0": 1}
+    assert informe["diferencias_diarias"]["dias_b_mayor"] == 1
+    # Contraste a mano de una fila de la tabla A/B con los CSV exportados.
+    horas = pd.read_csv(salida / "horas.csv")
+    tabla = pd.read_csv(salida / "tabla_ab.csv").set_index(["indicador", "unidad"])
+    for politica in ("beta", "chronos", "reactiva"):
+        assert tabla.loc[("Energía no atendida", "Wh"), politica] == horas.loc[
+            horas.politica.eq(politica), "no_atendida_wh"].sum()
+    assert tabla.loc[("J realizado", "Wh·p"), "diferencia_b_menos_a"] == 1.
+    assert "| Servicio | J realizado | Wh·p | 3.000 | 4.000 | 1.000 | 4.000 |" in (
+        salida / "tabla_ab.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("fallo", ["salida_existente", "codigo"])
+def test_comando_fallido_no_publica_resumen(comando, monkeypatch, fallo):
+    config, salida, original = comando
+    if fallo == "salida_existente":
+        salida.mkdir()
+    else:
+        hashes = iter([{"experimento.py": "original"}, {"experimento.py": "editado"}])
+        monkeypatch.setattr("src.cli.codigo_sha256", lambda: next(hashes))
+    with pytest.raises(SystemExit) as error:
+        experimento.main()
+    assert error.value.code == 1
+    assert not (salida / "resumen.json").exists() and not (salida / "resumen.json.tmp").exists()
+    assert config.read_bytes() == original
