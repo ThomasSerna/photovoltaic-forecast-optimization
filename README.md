@@ -7,6 +7,8 @@ y controlador MPC heurístico.
 
 **T01–T03 completadas:** datos, pronósticos Chronos-2 y simulador energético.
 **T04 completada:** referencia beta, escenarios y MPC; ensayo pareado verificado en CPU.
+**T05 completada:** evaluación pareada A/B en el periodo reservado, tabla, gráficas y
+borrador del artículo ([docs/articulo.md](docs/articulo.md)).
 El comando de preparación descrito abajo todavía **no ejecuta el simulador**
 ni los pronósticos. El alcance matemático y el experimento se explican en
 [docs/IDEA.md](docs/IDEA.md).
@@ -17,7 +19,7 @@ ni los pronósticos. El alcance matemático y el experimento se explican en
 - **T02 — Chronos-2:** completada y verificada en CPU ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
 - **T03 — Simulador energético y heurística:** completada ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)).
 - **T04 — Referencia beta y MPC compartido:** completada y verificada en CPU ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
-- **T05 — Comparación y resultados:** pendiente ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)).
+- **T05 — Comparación y resultados:** completada y verificada en CPU ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)).
 
 El objetivo es simplificar el código y la arquitectura, **sin simplificar
 las ecuaciones ni las restricciones físicas del modelo**.
@@ -349,6 +351,103 @@ anteriores al refactor, con cero violaciones físicas. El registro local con
 semillas, versiones y hashes está en `results/revision_pre_t05/resumen_48h.json`.
 Esta revisión no repitió inferencia real de Chronos ni ejecutó la evaluación de T05.
 
+## Evaluación final A/B (T05)
+
+```powershell
+uv run --locked --extra pronosticos python -m src.experimento --salida results/t05_evaluacion
+```
+
+Evalúa el periodo reservado del 3 al 31 de marzo de 2025 (fin exclusivo): 672 h y
+112 orígenes por rama, con H=24, R=6, N=50 y `lambda_terminal=0` calibrado en T04.
+A (beta) y B (Chronos-2, cargado una sola vez) usan los callbacks comunes de
+`controlador.proveedores`. Parten de 1440 Wh por batería y reciben la misma demanda,
+el mismo contexto de 336 h y los mismos bloques, rangos y semillas por origen.
+Después, cada rama conserva sus propios estados. La **referencia reactiva** aplica
+la heurística de T03 con la GHI realizada de cada hora. Tiene información perfecta
+de la hora en curso: no es una alternativa admisible y no entra en la diferencia B − A.
+
+El comando verifica:
+
+- balances y cotas de las tres trayectorias (tolerancia de 1e-6 Wh), incluida la
+  dirección de carga y descarga;
+- el mismo hash de contexto, bloques, rangos y semilla para A y B en cada origen;
+- que ningún contexto ni bloque sea posterior al origen;
+- la repetición de las primeras 48 h de cada rama, exigiendo decisiones idénticas en
+  las 30 h con horizonte completo;
+- que entradas y código no cambien durante la ejecución.
+
+No modifica la configuración. Exige una carpeta nueva y publica `resumen.json` al
+final como marcador de éxito. Exporta:
+
+- `tabla_ab.csv` y `tabla_ab.md`: A, B, B − A y referencia por indicador.
+- `horas.csv`, `cargas.csv`, `baterias.csv` y `decisiones.csv`, con columna `politica`.
+- `pronosticos.csv`: crudos y corregidos por origen y anticipación, frente a ERA5.
+- `diario.csv`: J, S_pond y energía no atendida por día local, y ΔJ = J_B − J_A.
+- `figuras/`: `irradiancia.png`, `demanda_atendida.png`, `baterias.png` y
+  `diferencias_diarias.png`.
+- `resumen.json`: verificaciones, métricas, reservas elegidas, semillas, bloques,
+  tiempos, versiones, hashes y supuestos.
+
+Desde Python, `evaluar(caso, pronosticadores)` ejecuta y verifica las tres políticas.
+`resumir` calcula las métricas y `verificar_reproducibilidad` repite el tramo inicial.
+
+**Ensayo CPU verificado el 19 de octubre de 2026** (`results/t05_evaluacion_verificada/`,
+excluido de Git y regenerable). Las métricas de pronóstico usan la mediana y los
+cuantiles corregidos sobre 1438 pares diurnos (origen, anticipación):
+
+| Indicador | A — beta | B — Chronos-2 | B − A | Reactiva |
+|---|---:|---:|---:|---:|
+| MAE diurno (W/m²) | 66.33 | 64.20 | −2.13 | — |
+| MAE diurno, primeras 6 h (W/m²) | 66.97 | 60.77 | −6.21 | — |
+| Pinball diurno (W/m²) | 25.94 | 25.13 | −0.81 | — |
+| Cobertura 0.1–0.9 diurna (nominal 80 %) | 76.98 % | 80.95 % | +3.96 p.p. | — |
+| J realizado (Wh·p) | 285714.424364 | 286220.023421 | +505.599057 | 285240.844736 |
+| S_pond | 0.9312263476 | 0.9328742419 | +0.0016478943 | 0.9296828140 |
+| Energía no atendida (Wh) | 16418.24 (11.06 %) | 16352.93 (11.02 %) | −65.31 | 16218.53 (10.93 %) |
+| Servicio crítico (p ≥ 3) | 100 % | 100 % | 0 | 100 % |
+| Horas con demanda atendida por completo | 93.01 % | 93.01 % | 0 | 93.01 % |
+
+**Pronóstico.** Chronos-2 mejora todas las métricas de pronóstico. Su intervalo
+0.1–0.9 queda cerca de la cobertura nominal, mientras que beta se queda por debajo.
+
+**Servicio.** La ventaja en servicio es pequeña: +0.18 % de J, concentrada en 4 de
+28 días. Los otros 24 días son idénticos.
+
+| Día | ΔJ (Wh·p) |
+|---|---:|
+| 4 de marzo | +969.44 |
+| 5 de marzo | −488.86 |
+| 6 de marzo | −54.98 |
+| 17 de marzo | +80.00 |
+
+La media diaria es +18.06 Wh·p y la mediana, 0.
+
+**Reservas.** Beta eligió ρ=0 en los 112 orígenes. Chronos eligió ρ=0.25 en dos
+orígenes nublados (3 de marzo a las 18:00 y 4 de marzo a las 00:00, hora local).
+
+**Referencia reactiva.** Deja menos energía sin atender, pero obtiene menor J. Al
+atender más cargas de prioridad 1 temprano, deja menos energía para las de
+prioridad 2:
+
+| Prioridad | Beta | Chronos | Reactiva |
+|---|---:|---:|---:|
+| p=1 | 71.2 % | 70.3 % | 73.3 % |
+| p=2 | 91.8 % | 92.6 % | 90.6 % |
+
+En la semana de calibración ocurrió lo contrario (reactiva 73864.14 frente a 73192.49
+y 73784.14). La referencia no acota al MPC en ningún sentido.
+
+**Verificación.** Hubo cero violaciones físicas: error máximo del bus 1.2e-13 Wh y de
+batería 2.9e-13 Wh, cotas redondeadas hacia arriba. Hubo cero filtraciones y las
+repeticiones fueron exactas.
+
+**Recursos y reproducibilidad.** La ejecución duró 266.2 s en CPU, con los pesos de
+Chronos en caché (carga de 8.4 s). Cada rama tardó unos 117 s, sobre todo en
+simulaciones del MPC. La inferencia media por origen fue de 0.010 s con beta y
+0.028 s con Chronos. Una segunda ejecución completa produjo CSV idénticos byte a byte.
+Con 28 días, una sola realización y demanda sintética, estos resultados son
+exploratorios. No se aplican pruebas de significancia.
+
 ## Configuración y regeneración
 
 `scripts/configuracion.json` es la configuración única. Las rutas de `datos`
@@ -436,7 +535,7 @@ original en el repositorio.
 Los cinco CSV originales conservan su contenido. Se verifica conservación diaria
 con tolerancia de 0,001 Wh y capacidad por solicitud con holgura de 1e-6 Wh por
 redondeo. T03 verifica los balances físicos horarios y T04 verifica el ensayo
-pareado de calibración en CPU. La comparación final de T05 permanece pendiente.
+pareado de calibración en CPU. T05 verifica la evaluación reservada (sección anterior).
 Consultar `docs/datos.md` para datos/unidades y `docs/IDEA.md` para el protocolo
 experimental y las adaptaciones al [paper de Acuna et al.](https://doi.org/10.3390/en14102789).
 
