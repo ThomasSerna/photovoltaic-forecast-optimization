@@ -176,23 +176,24 @@ Los periodos locales se fijan con extremos derechos exclusivos:
 
 La configuración inicial incluye cuatro paneles de 500 W (2000 W nominales),
 arreglo horizontal equivalente, factor de desempeño 0,85, inversor de 2000 W y
-suministro a cargas limitado a 3000 W. Incluye dos baterías individuales de
+bus con límite de 3000 W; el inversor común limita el suministro a cargas a 2000 W.
+Incluye dos baterías individuales de
 2400 Wh: mínimo 480, máximo 2400 e inicial 1440 Wh por batería, límites de carga
 y descarga de 600 W medidos en el bus y eficiencias de 0,95. Son **supuestos del
 proyecto sin calibración**, no equipos medidos ni valores atribuidos al paper.
 No se agregan estados ni límites de las baterías en la ingesta.
 
 Intervalo: 1 h; horizonte: 24 intervalos; replanificación: 6; escenarios: 50.
-Semilla de demanda: 20261018; semilla reservada para escenarios: 20261019.
-Configurar escenarios no implementa todavía su muestreo ni garantiza números
-aleatorios comunes. El estado inicial se refiere al inicio de la simulación;
+Semilla de demanda: 20261018; semilla de escenarios: 20261019.
+T04 implementa el muestreo con los mismos bloques y rangos para beta y Chronos-2
+(IDEA.md §5). El estado inicial se refiere al inicio de la simulación;
 los cortes desarrollo/evaluación no prescriben reinicios de batería.
 
 La correspondencia con ecuaciones (1)–(9), objetivo (10) y algoritmos del paper
-se implementará en las siguientes historias según las correcciones y
-adaptaciones registradas en IDEA.md, secciones 3 y 7. HU-01 verifica datos y
-dominios de parámetros; no verifica aún balances FV/baterías ni satisfacción
-de demanda atendida.
+se documenta en IDEA.md §4.5, con las correcciones y adaptaciones implementadas
+en T03–T04. El comando de preparación de T01 verifica datos y dominios de
+parámetros; los balances FV/baterías y el servicio realizado se comprueban en
+el simulador y la calibración. La evaluación final corresponde a T05.
 
 ## Nuevas adquisiciones solares
 

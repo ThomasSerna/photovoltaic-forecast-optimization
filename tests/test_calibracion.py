@@ -107,8 +107,30 @@ def test_verificacion_fisica_detecta_un_balance_de_bateria_alterado():
     assert informe["violaciones_fisicas"] == 0
     assert informe["max_error_bus_wh"] <= 1e-6
     assert informe["max_error_bateria_wh"] <= 1e-6
-    resultado["baterias"].loc[0, "final_wh"] += 0.1
-    with pytest.raises(ValueError):
+    resultado["baterias"].loc[1, "final_wh"] += 0.1
+    resultado["estado_final"]["b"] += 0.1
+    with pytest.raises(ValueError, match="batería b: error de balance"):
+        controlador._verificar_fisica(resultado, caso.configuracion)
+
+
+@pytest.mark.parametrize("tabla,fila,campo,valor,mensaje", [
+    ("cargas", 0, "z", 2, "decisiones de servicio"),
+    ("cargas", 0, "atendida_wh", 0., "energía atendida"),
+    ("cargas", 0, "potencia_w_supuesta", 2., "potencia nominal"),
+    ("horas", 0, "vertido_wh", -1., "vertido negativo"),
+    ("horas", 0, "fv_wh", 1., "balance del bus"),
+    ("baterias", 0, "inicial_wh", 2., "estado fuera de límites"),
+    ("baterias", 1, "carga_wh", -1., "flujo negativo"),
+    ("baterias", 0, "carga_wh", 0.5, "carga y descarga simultáneas"),
+    ("baterias", 1, "carga_wh", 2., "límite de potencia"),
+    ("baterias", 0, "inicial_wh", 0.5, "energía disponible"),
+    ("baterias", 1, "inicial_wh", 0.5, "discontinuidad entre horas"),
+])
+def test_verificacion_fisica_identifica_la_restriccion_incumplida(tabla, fila, campo, valor, mensaje):
+    caso = _caso()
+    resultado = simular(caso.demanda, caso.irradiancia_simulacion, caso.configuracion)
+    resultado[tabla].loc[fila, campo] = valor
+    with pytest.raises(ValueError, match=mensaje):
         controlador._verificar_fisica(resultado, caso.configuracion)
 
 

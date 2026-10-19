@@ -255,8 +255,9 @@ def ensayo_chronos(caso, salida):
     pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
     carga_s = perf_counter() - inicio
     memoria.append(proceso.memory_info().rss)
-    crudos, corregidos, reales, diurnos, filas, ejecuciones = [], [], [], [], [], []
-    for actual in origenes + [origen]:
+
+    def inferir(actual):
+        """Mide y valida cada inferencia, incluida la repetición del primer origen."""
         inicio = perf_counter()
         crudo = pronosticar_chronos(
             pipeline, caso.irradiancia_historica, actual, contexto=opciones["contexto"],
@@ -266,18 +267,16 @@ def ensayo_chronos(caso, salida):
         memoria.append(proceso.memory_info().rss)
         if not np.isfinite(crudo.to_numpy()).all():
             raise ValueError("Chronos-2: la inferencia contiene valores no finitos")
-        if len(crudos) == 2:
-            repetible = crudo.index.equals(crudos[0].index) and crudo.columns.equals(crudos[0].columns)
-            if not repetible or not np.allclose(crudo, crudos[0], rtol=1e-5, atol=1e-6):
-                raise ValueError("Chronos-2: la repetición del primer origen no coincide")
-            repeticion_s = duracion
-            break
+        return crudo, duracion
+
+    crudos, corregidos, reales, diurnos, filas, ejecuciones = [], [], [], [], [], []
+    for actual, contexto in zip(origenes, contextos):
+        crudo, duracion = inferir(actual)
         corregido, correcciones = corregir_cuantiles(crudo, config)
         real = caso.irradiancia_simulacion.set_index("inicio_utc")["ghi_w_m2"].reindex(crudo.index)
         if not np.isfinite(real.to_numpy()).all():
             raise ValueError("referencia: falta irradiancia realizada para el horizonte")
         diurno = ~mascara_noche(crudo.index, config)
-        contexto = contextos[len(crudos)]
         ejecuciones.append({
             "origen_utc": actual.isoformat(), "inferencia_s": duracion,
             "contexto_horas": len(contexto),
@@ -298,6 +297,12 @@ def ensayo_chronos(caso, salida):
         corregidos.append(corregido)
         reales.append(real.to_numpy())
         diurnos.append(diurno)
+
+    repeticion, repeticion_s = inferir(origen)
+    mismos_ejes = repeticion.index.equals(crudos[0].index) and repeticion.columns.equals(crudos[0].columns)
+    if not mismos_ejes or not np.allclose(repeticion, crudos[0], rtol=1e-5, atol=1e-6):
+        raise ValueError("Chronos-2: la repetición del primer origen no coincide")
+
     versiones = entorno()
     for paquete in ("chronos-forecasting", "torch", "transformers", "huggingface-hub",
                     "numpy", "astral", "matplotlib", "psutil"):

@@ -223,37 +223,55 @@ def ejecutar_mpc(caso, pronosticar, *, inicio, fin, estado_inicial=None):
 def _verificar_fisica(resultado, configuracion):
     """Contrasta los resultados realizados con IDEA §4, sin ampliar presupuestos."""
     cargas, horas, baterias = (resultado[n] for n in ("cargas", "horas", "baterias"))
-    limites = min(configuracion["potencia_bus_max_w"], configuracion["pv"]["inversor_max_w"])
+    potencia_max_w = min(configuracion["potencia_bus_max_w"], configuracion["pv"]["inversor_max_w"])
     potencia = (cargas["potencia_w_supuesta"] * cargas["z"]).groupby(cargas["t"]).sum()
     if (not cargas[["x", "z", "solicitada"]].isin([0, 1]).all().all()
-            or (cargas.z > cargas.x).any() or (cargas.x > cargas.solicitada).any()
-            or not (cargas.atendida_wh == cargas.demanda_wh * cargas.z).all()
-            or (potencia > limites).any() or (horas.vertido_wh < 0).any()):
-        raise ValueError("verificación: violación de servicio, potencia nominal o vertido")
-    neto = baterias.groupby("t")[["carga_wh", "descarga_wh"]].sum()
-    bus = horas.set_index("t").eval("fv_wh - atendida_wh - vertido_wh") + neto.descarga_wh - neto.carga_wh
+            or (cargas.z > cargas.x).any() or (cargas.x > cargas.solicitada).any()):
+        raise ValueError("verificación: decisiones de servicio fuera de solicitudes o compromisos")
+    if not (cargas.atendida_wh == cargas.demanda_wh * cargas.z).all():
+        raise ValueError("verificación: energía atendida distinta de demanda por servicio")
+    if (potencia > potencia_max_w).any():
+        raise ValueError("verificación: potencia nominal atendida superior al límite del sistema")
+    if (horas.vertido_wh < 0).any():
+        raise ValueError("verificación: vertido negativo")
+
     error_bateria = 0.
     for bateria in configuracion["baterias"]:
         flujos = baterias.loc[baterias.bateria_id.eq(bateria["id"])].sort_values("t")
         inicial, final = flujos.inicial_wh, flujos.final_wh
         carga, descarga = flujos.carga_wh, flujos.descarga_wh
         eta_c, eta_d = bateria["eficiencia_carga"], bateria["eficiencia_descarga"]
-        error = (final - inicial - eta_c * carga + descarga / eta_d).abs().max()
-        error_bateria = max(error_bateria, float(error))
+        nombre = f"verificación: batería {bateria['id']}"
         if (not flujos[["inicial_wh", "final_wh"]].ge(bateria["minimo_wh"]).all().all()
-                or not flujos[["inicial_wh", "final_wh"]].le(bateria["maximo_wh"]).all().all()
-                or not flujos[["carga_wh", "descarga_wh"]].ge(0).all().all()
-                or (carga * descarga != 0).any()
-                or (carga > bateria["potencia_carga_max_w"]).any()
-                or (descarga > bateria["potencia_descarga_max_w"]).any()
-                or (carga > (bateria["maximo_wh"] - inicial) / eta_c).any()
-                or (descarga > eta_d * (inicial - bateria["minimo_wh"])).any()
-                or inicial.iloc[1:].tolist() != final.iloc[:-1].tolist()
-                or resultado["estado_final"][bateria["id"]] != final.iloc[-1]):
-            raise ValueError(f"verificación: límites o continuidad de batería {bateria['id']}")
-    error_bus = float(bus.abs().max())
-    if not np.isfinite([error_bus, error_bateria]).all() or max(error_bus, error_bateria) > 1e-6:
-        raise ValueError("verificación: error de balance superior a 1e-6 Wh")
+                or not flujos[["inicial_wh", "final_wh"]].le(bateria["maximo_wh"]).all().all()):
+            raise ValueError(f"{nombre}: estado fuera de límites")
+        if not flujos[["carga_wh", "descarga_wh"]].ge(0).all().all():
+            raise ValueError(f"{nombre}: flujo negativo")
+        if (carga * descarga != 0).any():
+            raise ValueError(f"{nombre}: carga y descarga simultáneas")
+        if ((carga > bateria["potencia_carga_max_w"]).any()
+                or (descarga > bateria["potencia_descarga_max_w"]).any()):
+            raise ValueError(f"{nombre}: flujo superior al límite de potencia")
+        if ((carga > (bateria["maximo_wh"] - inicial) / eta_c).any()
+                or (descarga > eta_d * (inicial - bateria["minimo_wh"])).any()):
+            raise ValueError(f"{nombre}: flujo superior a la energía disponible o al espacio de carga")
+        if inicial.iloc[1:].tolist() != final.iloc[:-1].tolist():
+            raise ValueError(f"{nombre}: discontinuidad entre horas")
+        if resultado["estado_final"][bateria["id"]] != final.iloc[-1]:
+            raise ValueError(f"{nombre}: estado final distinto del último estado registrado")
+
+        error = float((final - inicial - eta_c * carga + descarga / eta_d).abs().max())
+        if not np.isfinite(error) or error > 1e-6:
+            raise ValueError(f"{nombre}: error de balance superior a 1e-6 Wh")
+        error_bateria = max(error_bateria, error)
+
+    neto = baterias.groupby("t")[["carga_wh", "descarga_wh"]].sum()
+    por_hora = horas.set_index("t")
+    balance_bus = (por_hora.fv_wh - por_hora.atendida_wh - por_hora.vertido_wh
+                   + neto.descarga_wh - neto.carga_wh)
+    error_bus = float(balance_bus.abs().max())
+    if not np.isfinite(error_bus) or error_bus > 1e-6:
+        raise ValueError("verificación: error de balance del bus superior a 1e-6 Wh")
     return dict(max_error_bus_wh=error_bus, max_error_bateria_wh=error_bateria, violaciones_fisicas=0)
 
 

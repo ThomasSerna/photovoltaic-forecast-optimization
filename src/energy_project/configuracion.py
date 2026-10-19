@@ -1,6 +1,6 @@
 """Configuración del experimento: supuestos fijos del código y validación de configuracion.json.
 
-No ejecuta el modelo energético de HU-02. `validar_demanda` exige que el JSON coincida con los
+No ejecuta el simulador energético. `validar_demanda` exige que el JSON coincida con los
 supuestos fijos de abajo; `validar_sistema` comprueba los dominios del resto de parámetros.
 """
 

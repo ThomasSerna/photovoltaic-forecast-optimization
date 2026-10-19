@@ -34,42 +34,46 @@ def _despachar(fv_wh, atendida_wh, baterias, estado, limites_descarga=None):
     Carga únicamente con excedente FV y descarga únicamente para cubrir déficit.
     Las cotas operativas opcionales limitan la descarga por batería en el plan.
     """
-    excedente = max(0., fv_wh - atendida_wh)
-    deficit = max(0., atendida_wh - fv_wh)
-    flujos, siguiente = [], {}
+    excedente_wh = max(0., fv_wh - atendida_wh)
+    deficit_wh = max(0., atendida_wh - fv_wh)
+    flujos, estado_siguiente = [], {}
     for bateria in sorted(baterias, key=lambda b: b["id"]):
-        id_ = bateria["id"]
-        inicial = estado[id_]
+        bateria_id = bateria["id"]
+        inicial_wh = estado[bateria_id]
         eta_c, eta_d = bateria["eficiencia_carga"], bateria["eficiencia_descarga"]
-        hueco_bus = (bateria["maximo_wh"] - inicial) / eta_c
-        disponible_bus = eta_d * (inicial - bateria["minimo_wh"])
-        carga = min(excedente, bateria["potencia_carga_max_w"] * RESOLUCION_H, hueco_bus)
-        limite = _limite_descarga(bateria, inicial)
+        hueco_bus_wh = (bateria["maximo_wh"] - inicial_wh) / eta_c
+        disponible_bus_wh = eta_d * (inicial_wh - bateria["minimo_wh"])
+        carga_wh = min(excedente_wh, bateria["potencia_carga_max_w"] * RESOLUCION_H, hueco_bus_wh)
+        limite_descarga_wh = _limite_descarga(bateria, inicial_wh)
         if limites_descarga is not None:
-            limite = min(limite, limites_descarga[id_])
-        descarga = min(deficit, limite)
-        final = inicial
-        # Usar el extremo cercano evita cancelación numérica sin recortar el estado.
-        if carga > 0:
-            final = (inicial + eta_c * carga if carga <= hueco_bus / 2
-                     else bateria["maximo_wh"] - (hueco_bus - carga) * eta_c)
-        elif descarga > 0:
-            final = (inicial - descarga / eta_d if descarga <= disponible_bus / 2
-                     else bateria["minimo_wh"] + (disponible_bus - descarga) / eta_d)
-        excedente -= carga
-        deficit -= descarga
-        siguiente[id_] = final
-        flujos.append(dict(bateria_id=id_, inicial_wh=inicial, carga_wh=carga,
-                           descarga_wh=descarga, final_wh=final))
-        error = final - (inicial + eta_c * carga - descarga / eta_d)
-        if (not bateria["minimo_wh"] <= final <= bateria["maximo_wh"]
-                or abs(error) > TOLERANCIA_NUMERICA or carga * descarga != 0):
-            raise ValueError(f"baterias.{id_}: despacho inconsistente")
-    error_bus = math.fsum([fv_wh, -atendida_wh, -excedente,
-                          *(f["descarga_wh"] - f["carga_wh"] for f in flujos)])
-    if deficit > TOLERANCIA_NUMERICA or abs(error_bus) > TOLERANCIA_NUMERICA:
+            limite_descarga_wh = min(limite_descarga_wh, limites_descarga[bateria_id])
+        descarga_wh = min(deficit_wh, limite_descarga_wh)
+        final_wh = inicial_wh
+        # C_{t+1} = C_t + eta_c*c - d/eta_d; cerca del límite, calcular desde ese extremo evita cancelación.
+        if carga_wh > 0:
+            if carga_wh <= hueco_bus_wh / 2:
+                final_wh = inicial_wh + eta_c * carga_wh
+            else:
+                final_wh = bateria["maximo_wh"] - (hueco_bus_wh - carga_wh) * eta_c
+        elif descarga_wh > 0:
+            if descarga_wh <= disponible_bus_wh / 2:
+                final_wh = inicial_wh - descarga_wh / eta_d
+            else:
+                final_wh = bateria["minimo_wh"] + (disponible_bus_wh - descarga_wh) / eta_d
+        excedente_wh -= carga_wh
+        deficit_wh -= descarga_wh
+        estado_siguiente[bateria_id] = final_wh
+        flujos.append(dict(bateria_id=bateria_id, inicial_wh=inicial_wh, carga_wh=carga_wh,
+                           descarga_wh=descarga_wh, final_wh=final_wh))
+        error_bateria_wh = final_wh - (inicial_wh + eta_c * carga_wh - descarga_wh / eta_d)
+        if (not bateria["minimo_wh"] <= final_wh <= bateria["maximo_wh"]
+                or abs(error_bateria_wh) > TOLERANCIA_NUMERICA or carga_wh * descarga_wh != 0):
+            raise ValueError(f"baterias.{bateria_id}: despacho inconsistente")
+    error_bus_wh = math.fsum([fv_wh, -atendida_wh, -excedente_wh,
+                             *(f["descarga_wh"] - f["carga_wh"] for f in flujos)])
+    if deficit_wh > TOLERANCIA_NUMERICA or abs(error_bus_wh) > TOLERANCIA_NUMERICA:
         raise ValueError("despacho: la energía atendida no conserva el balance del bus")
-    return flujos, siguiente, excedente
+    return flujos, estado_siguiente, excedente_wh
 
 
 def _copiar_tabla(tabla, nombre, columnas):
