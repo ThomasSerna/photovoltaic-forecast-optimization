@@ -272,7 +272,31 @@ def _verificar_fisica(resultado, configuracion):
     error_bus = float(balance_bus.abs().max())
     if not np.isfinite(error_bus) or error_bus > 1e-6:
         raise ValueError("verificación: error de balance del bus superior a 1e-6 Wh")
+    # IDEA §4.4: cargar solo con excedente FV y descargar solo para cubrir déficit.
+    # Excluye descargas hacia el vertido y traspasos entre baterías en la misma hora.
+    excedente = (por_hora.fv_wh - por_hora.atendida_wh).clip(lower=0)
+    deficit = (por_hora.atendida_wh - por_hora.fv_wh).clip(lower=0)
+    if (neto.carga_wh > excedente + 1e-6).any() or (neto.descarga_wh > deficit + 1e-6).any():
+        raise ValueError("verificación: carga sin excedente FV o descarga sin déficit")
     return dict(max_error_bus_wh=error_bus, max_error_bateria_wh=error_bateria, violaciones_fisicas=0)
+
+
+def proveedores(caso, pipeline):
+    """Callbacks A/B (historia_admisible, origen_utc, horizonte) -> cuantiles crudos.
+
+    Comparten contexto, cuantiles y zona horaria de la configuración; solo cambia
+    el modelo de pronóstico. Calibración y evaluación usan exactamente estos dos.
+    """
+    config = caso.configuracion
+    opciones = config["pronosticos"]
+    return {
+        "beta": lambda historia, origen, horizonte: pronosticar_beta(
+            historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
+            cuantiles=opciones["cuantiles"], zona_horaria=config["zona_horaria"]),
+        "chronos": lambda historia, origen, horizonte: pronosticar_chronos(
+            pipeline, historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
+            cuantiles=opciones["cuantiles"]),
+    }
 
 
 def calibrar_mpc(caso, pipeline=None):
@@ -286,24 +310,17 @@ def calibrar_mpc(caso, pipeline=None):
     desarrollo = config["periodos"]["desarrollo"]
     if inicio < pd.Timestamp(desarrollo["inicio"]) or fin > pd.Timestamp(desarrollo["fin"]):
         raise ValueError("calibración: el ensayo debe permanecer dentro de desarrollo")
-    opciones = config["pronosticos"]
     if pipeline is None:
+        opciones = config["pronosticos"]
         pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
-    proveedores = {
-        "beta": lambda historia, origen, horizonte: pronosticar_beta(
-            historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
-            cuantiles=opciones["cuantiles"], zona_horaria=config["zona_horaria"]),
-        "chronos": lambda historia, origen, horizonte: pronosticar_chronos(
-            pipeline, historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
-            cuantiles=opciones["cuantiles"]),
-    }
-    claves = [(nombre, peso) for nombre in proveedores for peso in PESOS_TERMINALES]
+    pronosticadores = proveedores(caso, pipeline)
+    claves = [(nombre, peso) for nombre in pronosticadores for peso in PESOS_TERMINALES]
     estados = {clave: _estado_inicial(config["baterias"], None) for clave in claves}
     recorridos, decisiones = {clave: [] for clave in claves}, {clave: [] for clave in claves}
-    pronosticos = {nombre: [] for nombre in proveedores}
+    pronosticos = {nombre: [] for nombre in pronosticadores}
     for origen in pd.date_range(inicio, fin, freq=f"{config['replanificacion']}h", inclusive="left"):
         horizonte = min(config["horizonte"], int((fin - origen) / pd.Timedelta(hours=1)))
-        for nombre, pronosticar in proveedores.items():
+        for nombre, pronosticar in pronosticadores.items():
             prediccion = _predecir(caso, pronosticar, origen, horizonte)
             pronosticos[nombre].append(dict(origen_utc=origen, **prediccion))
             for peso in PESOS_TERMINALES:

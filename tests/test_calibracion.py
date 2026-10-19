@@ -134,6 +134,32 @@ def test_verificacion_fisica_identifica_la_restriccion_incumplida(tabla, fila, c
         controlador._verificar_fisica(resultado, caso.configuracion)
 
 
+def test_verificacion_fisica_detecta_descarga_hacia_vertido():
+    # FV cubre la carga en t=1; descargar 0.5 Wh y verterlos conserva bus y batería.
+    caso = _caso(real=(1000., 1000.), prioridades=(1, 1))
+    resultado = simular(caso.demanda, caso.irradiancia_simulacion, caso.configuracion)
+    controlador._verificar_fisica(resultado, caso.configuracion)
+    resultado["baterias"].loc[1, ["descarga_wh", "final_wh"]] = [0.5, 0.5]
+    resultado["horas"].loc[1, "vertido_wh"] = 0.5
+    resultado["estado_final"]["b"] = 0.5
+    with pytest.raises(ValueError, match="descarga sin déficit"):
+        controlador._verificar_fisica(resultado, caso.configuracion)
+
+
+def test_verificacion_fisica_detecta_traspaso_entre_baterias():
+    caso = _caso(real=(1000., 1000.), prioridades=(1, 1))
+    bateria = caso.configuracion["baterias"][0]
+    caso.configuracion["baterias"] = [bateria, dict(bateria, id="c", inicial_wh=0.)]
+    resultado = simular(caso.demanda, caso.irradiancia_simulacion, caso.configuracion)
+    controlador._verificar_fisica(resultado, caso.configuracion)
+    # En t=1, b descarga 0.5 Wh que c almacena: cada balance individual se conserva.
+    resultado["baterias"].loc[2, ["descarga_wh", "final_wh"]] = [0.5, 0.5]
+    resultado["baterias"].loc[3, ["carga_wh", "final_wh"]] = [0.5, 0.5]
+    resultado["estado_final"].update(b=0.5, c=0.5)
+    with pytest.raises(ValueError, match="carga sin excedente FV o descarga sin déficit"):
+        controlador._verificar_fisica(resultado, caso.configuracion)
+
+
 @pytest.fixture
 def publicacion(tmp_path, monkeypatch):
     caso = _caso()

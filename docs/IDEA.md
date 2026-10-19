@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (18 de octubre de 2026):** **T01–T04 completadas** (datos, pronósticos Chronos-2, simulador y MPC pareado verificados en CPU). **T05 pendiente.**
+**Estado (19 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`).
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -191,6 +191,27 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
 
 **Ensayo CPU completado:** 28 orígenes por proveedor, 50 escenarios por origen y ocho recorridos de 168 h, en 1266.3 s con pesos en caché. Los cuatro pesos empataron: en beta, \(J=73192.486644\), \(S_{\mathrm{pond}}=0.9540504745\); en Chronos, \(J=73784.143168\), \(S_{\mathrm{pond}}=0.9617626074\). El promedio pareado fue 73488.314906 y el desempate fijó **\(\lambda_T=0\)** en la configuración común. No hubo violaciones físicas; errores máximos observados del bus \(2.8422\times10^{-14}\) Wh y de batería \(2.2738\times10^{-13}\) Wh (cotas redondeadas hacia arriba), menores que \(10^{-6}\) Wh. Se comprobaron los mismos bloques/semillas en A/B, cuantiles finitos, hashes de código y CSV y coherencia de la configuración final. En esa verificación pasaron **260 pruebas** con el entorno bloqueado. Registro local regenerable: `results/t04_calibracion_verificada/resumen.json`. Esto documenta calibración, **no** el backtest de T05 ni una conclusión general sobre la utilidad del término terminal o la superioridad de Chronos.
 
+**Evaluación T05 completada:** `uv run --locked --extra pronosticos python -m src.experimento --salida results/t05_evaluacion` (`src/experimento.py`).
+
+- **Diseño.** Ejecuta A y B en el periodo reservado (3 al 31 de marzo de 2025, fin exclusivo; 112 orígenes por rama), con los callbacks comunes de `controlador.proveedores` y el mismo estado inicial configurado. Después conserva estados independientes.
+- **Referencia reactiva.** Añade la heurística de §4.4 ejecutada con la GHI realizada de cada hora. Es una adaptación del proyecto con información perfecta de la hora en curso: sirve para interpretar, no es una alternativa admisible y no entra en B − A.
+- **Verificaciones.** Física de §4, incluida la dirección del despacho: carga agregada ≤ excedente FV y descarga agregada ≤ déficit. Mismo hash de contexto, bloques, rangos y semilla por origen. Contexto y bloques nunca posteriores al origen. Repetición exacta de las primeras horas con horizonte completo.
+- **Exportaciones.** Tabla, CSV, cuatro figuras y `resumen.json`. No modifica la configuración.
+
+**Ensayo CPU verificado** (`results/t05_evaluacion_verificada/resumen.json`, regenerable; 306 pruebas aprobadas):
+
+- **Pronóstico.** Chronos-2 mejora el pronóstico diurno: MAE 64.20 frente a 66.33 W/m², pinball 25.13 frente a 25.94 W/m² y cobertura 0.1–0.9 de 80.95 % frente a 76.98 % (nominal 80 %). En las seis primeras horas de cada origen, el MAE baja de 66.97 a 60.77 W/m².
+- **Servicio.** La mejora es pequeña: \(J_B-J_A=+505.599\) Wh·p (+0.18 %) y \(S_{\mathrm{pond}}\) 0.9328742419 frente a 0.9312263476. La diferencia se concentra en 4 de 28 días (+969.44, −488.86, −54.98 y +80.00 Wh·p); los otros 24 días son idénticos.
+- **Cargas críticas y nivel de servicio.** El servicio crítico es del 100 % y el nivel de servicio horario, del 93.01 % en las tres políticas.
+- **Reservas.** Beta eligió \(\rho=0\) en todos los orígenes y Chronos eligió \(\rho=0.25\) en dos.
+- **Referencia reactiva.** Obtiene \(J=285240.845\): menor que A y B, aunque deja menos energía sin atender. Atiende más cargas de prioridad 1 (73.3 %) y menos de prioridad 2 (90.6 %). En la semana de calibración había superado a ambas ramas, así que no acota al MPC.
+- **Consistencia.** Cero violaciones físicas: error del bus ≤ 1.2e−13 Wh y de batería ≤ 2.9e−13 Wh. Cero filtraciones.
+- **Reproducibilidad y tiempos.** Dos ejecuciones completas produjeron CSV idénticos. La ejecución duró 266.2 s en CPU, con inferencias medias de 0.010 s (beta) y 0.028 s (Chronos) por origen.
+
+**Lectura del resultado.** Un pronóstico mejor no se traduce automáticamente en más servicio. Con calendario fijo (\(z\le x\)), una mediana pesimista deja cargas sin comprometer y una optimista compromete cargas que luego se desconectan: Chronos registró 35 compromisos incumplidos y beta, 29. El efecto neto depende de pocos días nublados. Estas cifras son exploratorias y no permiten afirmar significancia.
+
+**Correspondencia con los indicadores del artículo (§4.2).** El artículo mide el *service level* (porcentaje de réplicas en que se cubre la demanda) y el *missing of fulfilment* (porcentaje medio no cubierto). T05 calcula sus análogos sobre la trayectoria realizada: la proporción de horas con demanda atendida por completo y la fracción media no atendida en las horas con déficit. La diferencia está en la base: horas de una sola realización, no réplicas. Los bloques y rangos comunes de A y B cumplen el papel de los números aleatorios comunes que usa el artículo (§3.1) para comparar soluciones. No se compara numéricamente con el caso Volcanes, porque los datos, el sistema y la demanda difieren.
+
 **Indicadores principales** (calculados sobre ejecución realizada):
 
 | Tipo | Indicador |
@@ -205,7 +226,7 @@ El resultado principal es la **diferencia pareada B−A** en servicio bajo la mi
 
 **Criterio de éxito del trabajo:** ejecutar ambos métodos de extremo a extremo, respetar la física, mostrar resultados reproducibles y explicar si Chronos-2 aporta o no una mejora bajo estos supuestos. **No** es necesario que Chronos-2 gane.
 
-## 8. Implementación compacta: T01–T04 implementadas
+## 8. Implementación compacta: T01–T05 implementadas
 
 Conservar `data/`, la ingesta/generación existente de `src/` y sus pruebas actuales. T04 añade únicamente el peso terminal compartido a la configuración; los parámetros físicos conservan sus supuestos. No crear API, base de datos, interfaz web, framework de servicios ni abstracciones innecesarias.
 
@@ -216,7 +237,7 @@ src/
 ├── pronosticos.py   # Chronos-2, beta y correcciones comunes
 ├── simulador.py     # FV, baterías, despacho y cargas
 ├── controlador.py   # escenarios y MPC compartido
-└── experimento.py   # pendiente en T05: métricas y gráficos finales
+└── experimento.py   # T05: evaluación pareada, métricas, tabla y gráficos
 ```
 
 La implementación puede reunir funciones cortas en menos archivos si resulta más clara; **la estructura es orientativa**, no un requisito arquitectónico. Una configuración y un comando de experimento son suficientes. Preferir `numpy`, `pandas`, `scipy`, `matplotlib` y dependencias oficiales de Chronos-2 sobre desarrollar librerías propias. Añadir pruebas breves y enfocadas en invariantes matemáticos, tiempo de pronóstico y comparación justa; evitar pruebas extensas de infraestructura que no intervienen en la investigación.
@@ -227,7 +248,7 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 | **T02 — Chronos-2** ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)) | Pronosticar 24 h a partir de historia válida y graficar frente a irradiancia real | **Completada** |
 | **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)) | Física corregida por batería, heurística y restricciones verificables | **Completada** |
 | **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completada y verificada en CPU** |
-| **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | Pendiente |
+| **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
 
 Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 presentará el experimento final.
 

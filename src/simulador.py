@@ -12,6 +12,8 @@ import pandas as pd
 from .configuracion import RESOLUCION_H, numero
 from .datos import TOLERANCIA_NUMERICA
 
+PRIORIDAD_CRITICA = 3  # IDEA §6: solo p >= 3 puede descargar por debajo de la reserva
+
 
 def _energia_fotovoltaica(ghi_w_m2, pv):
     """Oferta FV de una hora; 1000 W/m² es referencia STC, no una cota de GHI."""
@@ -169,7 +171,7 @@ def _seleccionar(cargas, fv_wh, baterias, estado, potencia_max_w, calendario_fij
     limites = None
     for carga in sorted(cargas, key=lambda c: (-c["prioridad_supuesta"],
                                               -c["demanda_wh"], c["carga_id"])):
-        if reserva and carga["prioridad_supuesta"] < 3 and limites is None:
+        if reserva and carga["prioridad_supuesta"] < PRIORIDAD_CRITICA and limites is None:
             limites = _limites_reserva(baterias, estado, fv_wh, math.fsum(energias), reserva)
             disponible_wh = math.fsum([fv_wh, *limites.values()])
         energia = math.fsum([*energias, carga["demanda_wh"]])
