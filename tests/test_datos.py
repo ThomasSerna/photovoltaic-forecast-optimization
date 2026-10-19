@@ -87,6 +87,7 @@ def test_origen_inequivoco(caso, origen):
 @pytest.mark.parametrize("ruta_campo,valor", [
     (("horizonte",), 0), (("replanificacion",), 25), (("escenarios",), 2.5),
     (("semilla_escenarios",), True), (("potencia_bus_max_w",), float("inf")),
+    (("lambda_terminal",), -0.1), (("lambda_terminal",), float("nan")),
     (("pv", "paneles"), True), (("pv", "potencia_nominal_w"), 1500),
     (("pv", "factor_desempeno"), 1.1), (("pv", "geometria"), "inclinado"),
     (("baterias", 1, "inicial_wh"), 470), (("baterias", 1, "maximo_wh"), 2500),

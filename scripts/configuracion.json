@@ -30,6 +30,7 @@
   },
   "replanificacion": 6,
   "escenarios": 50,
+  "lambda_terminal": 0.5,
   "potencia_bus_max_w": 3000,
   "datos": {
     "catalogo": "../data/catalogo_cargas.csv",

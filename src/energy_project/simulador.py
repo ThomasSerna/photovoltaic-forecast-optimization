@@ -27,11 +27,12 @@ def _limite_descarga(bateria, energia_wh):
                bateria["eficiencia_descarga"] * (energia_wh - bateria["minimo_wh"]))
 
 
-def _despachar(fv_wh, atendida_wh, baterias, estado):
+def _despachar(fv_wh, atendida_wh, baterias, estado, limites_descarga=None):
     """Despacha solo la demanda aceptada; devuelve flujos, estado nuevo y vertido.
 
     Configuración y estado deben estar validados; atendida_wh debe ser factible.
     Carga únicamente con excedente FV y descarga únicamente para cubrir déficit.
+    Las cotas operativas opcionales limitan la descarga por batería en el plan.
     """
     excedente = max(0., fv_wh - atendida_wh)
     deficit = max(0., atendida_wh - fv_wh)
@@ -43,7 +44,10 @@ def _despachar(fv_wh, atendida_wh, baterias, estado):
         hueco_bus = (bateria["maximo_wh"] - inicial) / eta_c
         disponible_bus = eta_d * (inicial - bateria["minimo_wh"])
         carga = min(excedente, bateria["potencia_carga_max_w"] * RESOLUCION_H, hueco_bus)
-        descarga = min(deficit, _limite_descarga(bateria, inicial))
+        limite = _limite_descarga(bateria, inicial)
+        if limites_descarga is not None:
+            limite = min(limite, limites_descarga[id_])
+        descarga = min(deficit, limite)
         final = inicial
         # Usar el extremo cercano evita cancelación numérica sin recortar el estado.
         if carga > 0:
@@ -137,11 +141,33 @@ def _estado_inicial(baterias, estado):
     return estado.copy()
 
 
-def _seleccionar(cargas, disponible_wh, potencia_max_w, calendario_fijo):
+def _limites_reserva(baterias, estado, fv_wh, critica_wh, reserva):
+    """Permite gastar la reserva solo en cargas críticas, sin actualizar estados."""
+    deficit = max(0., critica_wh - fv_wh)
+    limites = {}
+    for bateria in sorted(baterias, key=lambda b: b["id"]):
+        id_ = bateria["id"]
+        limite = _limite_descarga(bateria, estado[id_])
+        critica = min(deficit, limite)
+        deficit -= critica
+        piso = bateria["minimo_wh"] + reserva * (bateria["maximo_wh"] - bateria["minimo_wh"])
+        despues_critica = estado[id_] - critica / bateria["eficiencia_descarga"]
+        adicional = min(limite - critica,
+                        bateria["eficiencia_descarga"] * max(0., despues_critica - piso))
+        limites[id_] = min(limite, critica + adicional)
+    return limites
+
+
+def _seleccionar(cargas, fv_wh, baterias, estado, potencia_max_w, calendario_fijo, reserva):
     """Interpretación de algoritmos 1–2: (-prioridad, -energía, id), servicio completo."""
     energias, potencias = [], []
+    disponible_wh = math.fsum([fv_wh, *(_limite_descarga(b, estado[b["id"]]) for b in baterias)])
+    limites = None
     for carga in sorted(cargas, key=lambda c: (-c["prioridad_supuesta"],
                                               -c["demanda_wh"], c["carga_id"])):
+        if reserva and carga["prioridad_supuesta"] < 3 and limites is None:
+            limites = _limites_reserva(baterias, estado, fv_wh, math.fsum(energias), reserva)
+            disponible_wh = math.fsum([fv_wh, *limites.values()])
         energia = math.fsum([*energias, carga["demanda_wh"]])
         potencia = math.fsum([*potencias, carga["potencia_w_supuesta"]])
         carga["z"] = int(carga["x"] == 1 and energia <= disponible_wh and potencia <= potencia_max_w)
@@ -153,22 +179,28 @@ def _seleccionar(cargas, disponible_wh, potencia_max_w, calendario_fijo):
         carga["comprometida_wh"] = carga["demanda_wh"] * carga["x"]
         carga["atendida_wh"] = carga["demanda_wh"] * carga["z"]
         carga["no_atendida_wh"] = carga["demanda_wh"] - carga["atendida_wh"]
-    return math.fsum(energias), math.fsum(potencias)
+    return math.fsum(energias), math.fsum(potencias), limites
 
 
-def simular(demanda, irradiancia, configuracion, *, estado_inicial=None, compromisos=None):
+def simular(demanda, irradiancia, configuracion, *, estado_inicial=None, compromisos=None, reserva=0):
     """Simula una trayectoria explícita sin modificar entradas ni consultar otras fuentes.
 
     `configuracion` procede de cargar_caso/cargar_configuracion (T01). `demanda`
     conserva su rejilla completa de equipos y horas; `irradiancia` aporta t y
     ghi_w_m2. `compromisos`, si existe, aporta t, carga_id y x para esa misma
     rejilla. Los t enteros consecutivos pueden empezar en cualquier hora >= 0.
+    `reserva` en [0, 1] protege esa fracción de la capacidad utilizable individual
+    solo ante cargas de prioridad < 3; genera candidatos de T04. Una reserva
+    no nula es incompatible con compromisos fijos, evaluados sin otra reserva.
 
     Devuelve tablas cargas/horas/baterias, estado_final por batería y resumen
     energético con J y S_pond. Para continuar, pasar estado_final a la siguiente
     llamada; sin estado se usan los iniciales configurados. No implementa MPC.
     """
     numero(configuracion["resolucion_h"], "resolucion_h", minimo=1, maximo=1, entero=True)
+    numero(reserva, "reserva", maximo=1)
+    if reserva and compromisos is not None:
+        raise ValueError("reserva: solo se aplica al generar planes, sin compromisos fijos")
     demanda, irradiancia = _preparar_entradas(demanda, irradiancia, compromisos)
     baterias = configuracion["baterias"]
     estado = _estado_inicial(baterias, estado_inicial)
@@ -178,10 +210,9 @@ def simular(demanda, irradiancia, configuracion, *, estado_inicial=None, comprom
     for t, grupo in demanda.groupby("t", sort=True):
         cargas = grupo.to_dict("records")
         fv_wh = _energia_fotovoltaica(ghi[t], configuracion["pv"])
-        disponible_wh = math.fsum([fv_wh, *(_limite_descarga(b, estado[b["id"]]) for b in baterias)])
-        atendida_wh, potencia_w = _seleccionar(cargas, disponible_wh, potencia_max_w,
-                                               compromisos is not None)
-        flujos, estado, vertido_wh = _despachar(fv_wh, atendida_wh, baterias, estado)
+        atendida_wh, potencia_w, limites = _seleccionar(
+            cargas, fv_wh, baterias, estado, potencia_max_w, compromisos is not None, reserva)
+        flujos, estado, vertido_wh = _despachar(fv_wh, atendida_wh, baterias, estado, limites)
         solicitada_wh = math.fsum(c["demanda_wh"] for c in cargas)
         comprometida_wh = math.fsum(c["comprometida_wh"] for c in cargas)
         filas_cargas.extend(cargas)

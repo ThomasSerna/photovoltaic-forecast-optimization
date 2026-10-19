@@ -6,6 +6,7 @@ semisintético contextualizado en el Centro Educativo Rural El Rayo, Támesis:
 y controlador MPC heurístico.
 
 **T01–T03 completadas:** datos, pronósticos Chronos-2 y simulador energético.
+**T04 implementada:** referencia beta, escenarios y MPC; ensayo pareado en CPU pendiente.
 El comando de preparación descrito abajo todavía **no ejecuta el simulador**
 ni los pronósticos. El alcance matemático y el experimento se explican en
 [docs/IDEA.md](docs/IDEA.md).
@@ -15,7 +16,7 @@ ni los pronósticos. El alcance matemático y el experimento se explican en
 - **T01 — Preparación de datos:** completada ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)).
 - **T02 — Chronos-2:** completada y verificada en CPU ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
 - **T03 — Simulador energético y heurística:** completada ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)).
-- **T04 — Referencia beta y MPC compartido:** pendiente ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
+- **T04 — Referencia beta y MPC compartido:** implementada; verificación del ensayo en CPU pendiente ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
 - **T05 — Comparación y resultados:** pendiente ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)).
 
 El objetivo es simplificar el código y la arquitectura, **sin simplificar
@@ -73,7 +74,7 @@ El pipeline se carga una sola vez y se reutiliza entre orígenes. La primera
 carga necesita descargar pesos públicos; las siguientes utilizan la caché de
 Hugging Face. No hacen falta claves de API.
 
-La interfaz compartida con la futura beta es una tabla de cuantiles en W/m²:
+La interfaz compartida con beta es una tabla de cuantiles en W/m²:
 índice horario `inicio_utc` con zona UTC y columnas numéricas de probabilidad.
 La columna `0.5` es la mediana. Se exige contexto completo, terminado y disponible;
 no se interpolan huecos. El primer intervalo pronosticado empieza en el origen.
@@ -138,7 +139,7 @@ Los artefactos quedan en `results/chronos_t02/`, excluidos de Git y regenerables
 ## Simulador energético y heurística (T03)
 
 `simular(demanda, irradiancia, configuracion, *, estado_inicial=None,
-compromisos=None)` recorre horas consecutivas con FV, selección binaria de cargas
+compromisos=None, reserva=0)` recorre horas consecutivas con FV, selección binaria de cargas
 y estado individual de cada batería. Usa la formulación física corregida de
 IDEA.md §4, con eficiencias, límites de energía/potencia y vertido explícitos.
 No garantiza el óptimo global ni representa la operación eléctrica dentro de la hora.
@@ -180,6 +181,9 @@ los estados configurados una sola vez al iniciar la llamada. `compromisos` debe
 cubrir exactamente todas las filas de demanda con `t`, `carga_id`, `x` binaria y
 `x <= solicitada`. Sin calendario se fija `x = z`; con calendario, un déficit
 puede dejar `z = 0` conservando `x`, sin activar cargas adicionales.
+`reserva` admite una fracción entre 0 y 1 de la capacidad utilizable de cada
+batería, protegida solo ante prioridades menores que 3. Su valor predeterminado
+conserva T03; una reserva no nula se rechaza con compromisos fijos.
 
 El resultado es un diccionario de tablas y valores en memoria:
 
@@ -198,7 +202,7 @@ casos manuales, baterías heterogéneas y el periodo completo de desarrollo.
 
 El simulador es determinista: reutiliza los datos, parámetros y semillas de T01
 sin introducir otra semilla. No escribe archivos ni añade un comando; la
-preparación permanece igual. Beta, escenarios, reservas y MPC siguen en T04.
+preparación permanece igual. El controlador de T04 reutiliza esta misma física.
 
 ## Referencia beta (T04)
 
@@ -228,6 +232,72 @@ parámetros: 4 de 36 ajustes tuvieron soporte negativo y 11 emitieron advertenci
 los 36 ajustes escalados fueron válidos. Fechas, versiones y límites de esa
 comprobación quedan en IDEA §5. No constituye una validación estadística general
 ni una reproducción numérica de beta4 del artículo.
+
+## Escenarios, MPC y calibración (T04)
+
+`generar_escenarios(cuantiles, historico, origen, configuracion)` devuelve
+`escenarios` y `rangos` como matrices N×H, `bloques` como fechas UTC seleccionadas
+y `semilla`. Usa bloques completos de 24 h alineados con la hora local del origen
+dentro del contexto admisible. Calcula rangos por columna del horizonte, con
+empates promedio y `U=(r-0.5)/M`; muestrea bloques con reemplazo mediante una
+semilla derivada del origen UTC y `semilla_escenarios`. Ambos proveedores reciben
+los mismos bloques y rangos, independientemente del orden A/B. La interpolación
+prolonga los cuantiles extremos fuera de 0.1–0.9. Empates y colas truncadas
+aproximan la dependencia; no garantizan marginales exactas ni calibración conjunta.
+
+`planificar_mpc(demanda, calendario, cuantiles, escenarios, configuracion,
+*, estado_inicial=None)` genera cuatro calendarios sobre la mediana con reservas
+0, 0.25, 0.5 y 0.75. Devuelve `compromisos`, `puntuaciones`, la `reserva` elegida
+y los `planes`. Protege la reserva por batería después de cubrir cargas críticas
+(prioridad ≥3), conservando potencias y eficiencias individuales. Evalúa los
+calendarios fijos con los mínimos físicos originales, sin reserva adicional,
+y elige por beneficio esperado más energía útil terminal ponderada; desempata
+por menor reserva. Los calendarios idénticos comparten su evaluación.
+
+`ejecutar_mpc(caso, pronosticar, *, inicio, fin, estado_inicial=None)` recibe un
+callback `(historia_admisible, origen_utc, horizonte)` que devuelve cuantiles
+crudos. Aplica correcciones y escenarios comunes, ejecuta R horas contra la
+realización y continúa desde cada estado realmente alcanzado. Devuelve las
+tablas de T03, `decisiones` y `pronosticos` con crudos, corregidos y muestreo.
+Al cerrar el periodo reduce H y R a las horas restantes. El `resumen` cuenta
+solo ejecución realizada, recalcula `S_pond` sobre sus totales y excluye el término
+terminal de `J`. Este MPC es una adaptación del proyecto; no es el algoritmo
+de selección de soluciones frecuentes del artículo ni garantiza optimalidad.
+
+El peso terminal compartido queda pendiente de calibración en desarrollo.
+
+Tras calibrar, este ejemplo ejecuta un día de desarrollo con el mismo peso y
+carga Chronos una sola vez:
+
+```python
+from energy_project import cargar_caso
+from energy_project.controlador import ejecutar_mpc
+from energy_project.pronosticos import cargar_chronos, pronosticar_beta, pronosticar_chronos
+
+caso = cargar_caso("scripts/configuracion.json")
+opciones = caso.configuracion["pronosticos"]
+pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
+
+def con_beta(historia, origen, horizonte):
+    return pronosticar_beta(
+        historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
+        cuantiles=opciones["cuantiles"], zona_horaria=caso.configuracion["zona_horaria"],
+    )
+
+def con_chronos(historia, origen, horizonte):
+    return pronosticar_chronos(
+        pipeline, historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
+        cuantiles=opciones["cuantiles"],
+    )
+
+periodo = dict(inicio="2025-01-06T00:00:00-05:00", fin="2025-01-07T00:00:00-05:00")
+a = ejecutar_mpc(caso, con_beta, **periodo)
+b = ejecutar_mpc(caso, con_chronos, **periodo)
+```
+
+Las pruebas incluyen anticipación comprobable a mano, planes fijos, reservas
+heterogéneas, estados realizados, ausencia de información futura y calibración
+pareada. La evaluación reservada y sus gráficos corresponden a T05.
 
 ## Configuración y regeneración
 
@@ -312,8 +382,8 @@ original en el repositorio.
 
 Los cinco CSV originales conservan su contenido. Se verifica conservación diaria
 con tolerancia de 0,001 Wh y capacidad por solicitud con holgura de 1e-6 Wh por
-redondeo. T03 verifica los balances físicos horarios; los resultados de control
-y la comparación beta/Chronos-2 siguen pendientes.
+redondeo. T03 verifica los balances físicos horarios; el ensayo de calibración
+de T04 en CPU y la comparación final beta/Chronos-2 de T05 siguen pendientes.
 Consultar `docs/datos.md` para datos/unidades y `docs/IDEA.md` para el protocolo
 experimental y las adaptaciones al [paper de Acuna et al.](https://doi.org/10.3390/en14102789).
 

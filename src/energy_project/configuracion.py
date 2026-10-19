@@ -208,6 +208,7 @@ def _validar_control(config):
         raise ValueError("replanificacion: no puede superar horizonte")
     for campo in ("semilla", "semilla_escenarios"):
         numero(config[campo], campo, entero=True)
+    numero(config["lambda_terminal"], "lambda_terminal")
 
 
 def _validar_pv(pv):
