@@ -404,12 +404,18 @@ def tabla_markdown(tabla):
 def _estilo():
     """Superficie, tinta y rejilla recesivas; el color queda reservado a los datos."""
     return {"figure.facecolor": SUPERFICIE, "axes.facecolor": SUPERFICIE, "savefig.facecolor": SUPERFICIE,
-            "axes.edgecolor": EJE, "axes.linewidth": 0.8, "axes.grid": True, "grid.color": REJILLA,
+            "axes.edgecolor": EJE, "axes.linewidth": 0.8, "axes.grid": True, "axes.axisbelow": True, "grid.color": REJILLA,
             "grid.linewidth": 0.6, "grid.linestyle": "-", "axes.spines.top": False, "axes.spines.right": False,
             "text.color": TINTA, "axes.labelcolor": TINTA_SECUNDARIA, "axes.titlecolor": TINTA,
             "axes.titlesize": 11, "axes.titlelocation": "left", "xtick.color": TINTA_TENUE,
             "ytick.color": TINTA_TENUE, "legend.frameon": False, "font.size": 9, "lines.linewidth": 1.5,
             "lines.solid_capstyle": "round", "lines.solid_joinstyle": "round"}
+
+
+def _leyenda_superior(figura, eje):
+    """Leyenda común fuera de los ejes, para que no tape datos en ningún panel."""
+    figura.tight_layout(rect=(0, 0, 1, 0.94))
+    figura.legend(*eje.get_legend_handles_labels(), loc="upper right", ncols=3)
 
 
 def graficar(carpeta, caso, evaluacion, resumen):
@@ -455,8 +461,7 @@ def graficar(carpeta, caso, evaluacion, resumen):
         ejes[1].set_title("Energía solicitada no atendida por día")
         ejes[1].set_ylabel("Wh")
         ejes[1].set_xlabel("Fecha local")
-        ejes[0].legend(loc="lower left", ncols=3)
-        figura.tight_layout()
+        _leyenda_superior(figura, ejes[0])
         figura.savefig(carpeta / "demanda_atendida.png", dpi=150)
         plt.close(figura)
 
@@ -475,14 +480,14 @@ def graficar(carpeta, caso, evaluacion, resumen):
                              textcoords="offset points", va="center", color=TINTA_TENUE)
             eje.set_title(f"Energía almacenada en {bateria['id']} al final de cada hora")
             eje.set_ylabel("Wh")
-        ejes[0, 0].legend(loc="lower left", ncols=3)
         ejes[-1, 0].set_xlabel(f"Hora local ({zona})")
-        figura.tight_layout()
+        _leyenda_superior(figura, ejes[0, 0])
         figura.savefig(carpeta / "baterias.png", dpi=150)
         plt.close(figura)
 
         figura, eje = plt.subplots(figsize=(12, 3.8))
         eje.bar(fechas, por_dia["delta_J"], width=0.4, color=TINTA_SECUNDARIA)
+        eje.grid(axis="x", visible=False)
         eje.axhline(0, color=EJE, linewidth=0.8)
         eje.set_title("ΔJ diario = J(B, Chronos-2) − J(A, beta); positivo favorece a Chronos-2")
         eje.set_ylabel("Wh·p")
