@@ -1,7 +1,7 @@
-"""Chronos-2, referencia beta y correcciones comunes de GHI media horaria (W/m²).
+"""Chronos-2, TimesFM 3.0, referencia beta y correcciones comunes de GHI media horaria (W/m²).
 
 Adaptación de IDEA.md §5; no implementa el despacho ni las ecuaciones (1)–(10)
-de Acuña et al. (2021). El pipeline se carga una vez y se recibe explícitamente.
+de Acuña et al. (2021). Cada modelo se carga una vez y se recibe explícitamente.
 """
 
 import re
@@ -15,6 +15,7 @@ from .configuracion import numero
 from .datos import historial_admisible
 
 CHECKPOINT = "amazon/chronos-2"
+CHECKPOINT_TIMESFM = "google/timesfm-3.0-pytorch"  # pesos: TimesFM Non-Commercial License v1.0
 CUANTILES = tuple(i / 10 for i in range(1, 10))
 
 
@@ -28,17 +29,36 @@ def validar_cuantiles(cuantiles):
         raise ValueError("cuantiles: deben ser únicos, crecientes e incluir 0.5")
 
 
-def cargar_chronos(revision, dispositivo="cpu"):
-    """Carga el checkpoint oficial fijado a un commit, en FP32 y sin entrenamiento."""
+def _validar_carga(revision, dispositivo):
+    """Revisión fijada a un commit completo y dispositivo explícito."""
     if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
         raise ValueError("revision: se requiere un SHA completo de 40 caracteres")
     if dispositivo not in ("cpu", "cuda"):
         raise ValueError("dispositivo: se admite cpu o cuda, sin cambio automático")
+
+
+def cargar_chronos(revision, dispositivo="cpu"):
+    """Carga el checkpoint oficial fijado a un commit, en FP32 y sin entrenamiento."""
+    _validar_carga(revision, dispositivo)
     import torch
     from chronos import Chronos2Pipeline
 
     return Chronos2Pipeline.from_pretrained(
         CHECKPOINT, revision=revision, device_map=dispositivo, dtype=torch.float32,
+    )
+
+
+def cargar_timesfm(revision, dispositivo="cpu"):
+    """Carga TimesFM 3.0 (alternativa C) fijado a un commit, sin entrenamiento.
+
+    Los pesos publicados son FP32. Su licencia solo permite uso no comercial; el
+    proyecto los usa con fines académicos y no los redistribuye (IDEA §5).
+    """
+    _validar_carga(revision, dispositivo)
+    from timesfm3 import TimesFM3Forecaster
+
+    return TimesFM3Forecaster.from_pretrained(
+        CHECKPOINT_TIMESFM, device=dispositivo, revision=revision, per_core_batch_size=1,
     )
 
 
@@ -84,6 +104,30 @@ def pronosticar_chronos(pipeline, historico, origen, *, contexto=336, horizonte=
         raise ValueError("Chronos-2: cuantiles no finitos o forma distinta de (1, H, Q)")
     indice = pd.date_range(pd.Timestamp(origen).tz_convert("UTC"), periods=horizonte, freq="h", name="inicio_utc")
     return pd.DataFrame(salida[0], index=indice, columns=cuantiles)
+
+
+def pronosticar_timesfm(modelo, historico, origen, *, contexto=336, horizonte=24, cuantiles=CUANTILES):
+    """Cuantiles crudos H×Q de TimesFM 3.0, con la misma interfaz que Chronos-2.
+
+    Univariado y sin covariables. Se desactivan el promediado simétrico, el recorte
+    a no negativos y el reordenamiento internos: la corrección común se aplica después,
+    igual que en A y B. Los niveles se eligen de la salida nativa, sin interpolar.
+    """
+    numero(horizonte, "horizonte", minimo=1, maximo=1024, entero=True)
+    validar_cuantiles(cuantiles)
+    niveles = [float(q) for q in modelo.config.quantiles]
+    if any(q not in niveles for q in cuantiles):
+        raise ValueError(f"TimesFM 3.0: solo emite los cuantiles {niveles}; no se interpolan otros")
+    ventana = contexto_admisible(historico, origen, contexto)
+    salida = modelo.predict(
+        ventana["ghi_w_m2"].to_numpy(dtype=np.float32), horizon=horizonte, return_quantiles=True,
+        use_symmetric_averaging=False, make_positive=False, sort_quantiles=False,
+    )
+    valores = np.asarray(salida.quantiles, dtype=float)
+    if valores.shape != (horizonte, len(niveles)) or not np.isfinite(valores).all():
+        raise ValueError("TimesFM 3.0: cuantiles no finitos o forma distinta de (H, Q)")
+    indice = pd.date_range(pd.Timestamp(origen).tz_convert("UTC"), periods=horizonte, freq="h", name="inicio_utc")
+    return pd.DataFrame(valores[:, [niveles.index(q) for q in cuantiles]], index=indice, columns=cuantiles)
 
 
 def pronosticar_beta(historico, origen, *, contexto=336, horizonte=24, cuantiles=CUANTILES,
@@ -162,7 +206,7 @@ def mascara_noche(indice, configuracion):
 
 
 def corregir_cuantiles(tabla, configuracion):
-    """Reordenamiento, no negatividad y noche, comunes a Chronos y beta.
+    """Reordenamiento, no negatividad y noche, comunes a beta, Chronos y TimesFM.
 
     No recorta máximos: 1000 W/m² es referencia STC, no un techo de irradiancia.
     Devuelve una copia y los conteos de las correcciones aplicadas.

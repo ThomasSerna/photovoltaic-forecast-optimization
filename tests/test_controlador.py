@@ -197,6 +197,22 @@ def test_proveedores_identicos_son_pareados_y_terminal_no_es_J():
     assert (resultados[0]["decisiones"].score > 0).all()
 
 
+def test_proveedores_incluyen_timesfm_solo_con_su_modelo(monkeypatch):
+    caso = _caso()
+    assert list(controlador.proveedores(caso, object())) == ["beta", "chronos"]
+    llamadas, modelo = [], object()
+
+    def pronosticar(*args, **kwargs):
+        llamadas.append((args, kwargs))
+        return "cuantiles"
+
+    monkeypatch.setattr(controlador, "pronosticar_timesfm", pronosticar)
+    callbacks = controlador.proveedores(caso, object(), modelo)
+    assert list(callbacks) == ["beta", "chronos", "timesfm"]
+    assert callbacks["timesfm"]("historia", ORIGEN, 2) == "cuantiles"
+    assert llamadas == [((modelo, "historia", ORIGEN), dict(contexto=336, horizonte=2, cuantiles=list(CUANTILES)))]
+
+
 def test_realizacion_futura_no_cambia_primera_decision():
     caso = _caso(real=(0., 0.), prioridades=(1, 3))
     alterado = deepcopy(caso)

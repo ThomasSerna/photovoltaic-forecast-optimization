@@ -12,7 +12,7 @@ import pandas as pd
 from .configuracion import numero
 from .pronosticos import (
     cargar_chronos, contexto_admisible, corregir_cuantiles, pronosticar_beta,
-    pronosticar_chronos, validar_cuantiles,
+    pronosticar_chronos, pronosticar_timesfm, validar_cuantiles,
 )
 from .simulador import _estado_inicial, simular
 
@@ -281,15 +281,16 @@ def _verificar_fisica(resultado, configuracion):
     return dict(max_error_bus_wh=error_bus, max_error_bateria_wh=error_bateria, violaciones_fisicas=0)
 
 
-def proveedores(caso, pipeline):
-    """Callbacks A/B (historia_admisible, origen_utc, horizonte) -> cuantiles crudos.
+def proveedores(caso, pipeline, modelo_timesfm=None):
+    """Callbacks (historia_admisible, origen_utc, horizonte) -> cuantiles crudos.
 
+    A (beta) y B (Chronos-2) siempre; C (TimesFM 3.0) solo si se recibe su modelo.
     Comparten contexto, cuantiles y zona horaria de la configuración; solo cambia
-    el modelo de pronóstico. Calibración y evaluación usan exactamente estos dos.
+    el modelo de pronóstico. La calibración usa exactamente A y B.
     """
     config = caso.configuracion
     opciones = config["pronosticos"]
-    return {
+    callbacks = {
         "beta": lambda historia, origen, horizonte: pronosticar_beta(
             historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
             cuantiles=opciones["cuantiles"], zona_horaria=config["zona_horaria"]),
@@ -297,6 +298,11 @@ def proveedores(caso, pipeline):
             pipeline, historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
             cuantiles=opciones["cuantiles"]),
     }
+    if modelo_timesfm is not None:
+        callbacks["timesfm"] = lambda historia, origen, horizonte: pronosticar_timesfm(
+            modelo_timesfm, historia, origen, contexto=opciones["contexto"], horizonte=horizonte,
+            cuantiles=opciones["cuantiles"])
+    return callbacks
 
 
 def calibrar_mpc(caso, pipeline=None):

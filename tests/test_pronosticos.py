@@ -11,12 +11,14 @@ import pandas as pd
 import pytest
 
 from src.pronosticos import (
-    cargar_chronos, corregir_cuantiles, mascara_noche, pronosticar_chronos,
+    cargar_chronos, cargar_timesfm, corregir_cuantiles, mascara_noche, pronosticar_chronos,
+    pronosticar_timesfm,
 )
 
 
 ORIGEN = pd.Timestamp("2025-01-06T00:00:00-05:00")
 CUANTILES = (0.1, 0.5, 0.9)
+NIVELES_TIMESFM = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]  # config.json de la revisión fijada
 
 
 class PipelineFalso:
@@ -32,6 +34,21 @@ class PipelineFalso:
         if self.salida is not None:
             valores = self.salida
         return [valores], [np.full((1, prediction_length), -999.)]
+
+
+class TimesFMFalso:
+    """Salida nativa (H, 9); la primera fila cruza cuantiles y tiene un negativo."""
+
+    def __init__(self, salida=None):
+        self.config = SimpleNamespace(quantiles=list(NIVELES_TIMESFM))
+        self.llamadas = []
+        self.salida = salida
+
+    def predict(self, context, horizon, **kwargs):
+        self.llamadas.append((np.asarray(context).copy(), horizon, kwargs))
+        valores = np.arange(horizon * 9, dtype=np.float32).reshape(horizon, 9) + 100
+        valores[0] = [5., -1., 3., 2., 1., 0., 9., 8., 7.]
+        return SimpleNamespace(quantiles=valores if self.salida is None else self.salida)
 
 
 @pytest.fixture
@@ -177,6 +194,83 @@ def test_cargar_usa_checkpoint_oficial_revision_y_dispositivo(monkeypatch):
     assert modelo == "amazon/chronos-2"
     assert parametros["revision"] == revision
     assert parametros["device_map"] == "cpu"
+
+
+def test_timesfm_ventana_niveles_y_crudos_sin_corregir(historico):
+    modelo = TimesFMFalso()
+    original = historico.copy(deep=True)
+    resultado = pronosticar_timesfm(modelo, historico, ORIGEN, contexto=4, horizonte=3, cuantiles=CUANTILES)
+    pd.testing.assert_index_equal(
+        resultado.index, pd.date_range(ORIGEN.tz_convert("UTC"), periods=3, freq="h", name="inicio_utc"),
+    )
+    assert list(resultado.columns) == list(CUANTILES)
+    # Columnas 0, 4 y 8 de la salida nativa; la fila cruzada y el negativo llegan intactos.
+    np.testing.assert_array_equal(resultado.to_numpy(), [[5., 1., 7.], [109., 113., 117.], [118., 122., 126.]])
+    contexto, horizonte, opciones = modelo.llamadas[0]
+    np.testing.assert_array_equal(contexto, [20., 30., 40., 50.])
+    assert contexto.dtype == np.float32 and horizonte == 3
+    assert opciones == dict(return_quantiles=True, use_symmetric_averaging=False,
+                            make_positive=False, sort_quantiles=False)
+    pd.testing.assert_frame_equal(historico, original)
+
+
+def test_timesfm_futuro_y_reserva_no_afectan_prediccion(historico):
+    modelo = TimesFMFalso()
+    esperado = pronosticar_timesfm(modelo, historico, ORIGEN, contexto=4, horizonte=3, cuantiles=CUANTILES)
+    alterado = historico.copy(deep=True)
+    alterado.loc[alterado["inicio_utc"] >= ORIGEN, "ghi_w_m2"] = 999999.
+    obtenido = pronosticar_timesfm(modelo, alterado, ORIGEN, contexto=4, horizonte=3, cuantiles=CUANTILES)
+    pd.testing.assert_frame_equal(obtenido, esperado)
+    np.testing.assert_array_equal(modelo.llamadas[0][0], modelo.llamadas[1][0])
+
+
+@pytest.mark.parametrize("parametros", [
+    {"cuantiles": (0.05, 0.5, 0.95)}, {"cuantiles": (0.1, 0.9)}, {"contexto": 13}, {"horizonte": 0},
+])
+def test_timesfm_rechaza_niveles_ausentes_y_contexto_incompleto(historico, parametros):
+    modelo = TimesFMFalso()
+    with pytest.raises(ValueError):
+        pronosticar_timesfm(modelo, historico, ORIGEN, **{"contexto": 4, "horizonte": 3,
+                                                          "cuantiles": CUANTILES, **parametros})
+    assert not modelo.llamadas
+
+
+@pytest.mark.parametrize("salida", [
+    None, np.zeros((3, 8)), np.zeros((2, 9)), np.zeros((1, 3, 9)),
+    np.full((3, 9), float("nan")), np.full((3, 9), float("inf")),
+])
+def test_timesfm_rechaza_salida_invalida_del_modelo(historico, salida):
+    modelo = TimesFMFalso(salida)
+    if salida is None:
+        modelo.predict = lambda context, horizon, **kwargs: SimpleNamespace(quantiles=None)
+    with pytest.raises(ValueError, match="TimesFM"):
+        pronosticar_timesfm(modelo, historico, ORIGEN, contexto=4, horizonte=3, cuantiles=CUANTILES)
+
+
+def test_cargar_timesfm_usa_checkpoint_oficial_revision_y_dispositivo(monkeypatch):
+    llamadas = []
+    modelo = TimesFMFalso()
+
+    def cargar(nombre, **kwargs):
+        llamadas.append((nombre, kwargs))
+        return modelo
+
+    monkeypatch.setitem(sys.modules, "timesfm3", SimpleNamespace(
+        TimesFM3Forecaster=SimpleNamespace(from_pretrained=cargar),
+    ))
+    revision = "b" * 40
+    assert cargar_timesfm(revision, dispositivo="cpu") is modelo
+    assert llamadas == [("google/timesfm-3.0-pytorch",
+                         dict(device="cpu", revision=revision, per_core_batch_size=1))]
+
+
+@pytest.mark.parametrize("cargar", [cargar_chronos, cargar_timesfm])
+@pytest.mark.parametrize("revision,dispositivo", [
+    ("a" * 39, "cpu"), ("A" * 40, "cpu"), (None, "cpu"), ("a" * 40, "mps"),
+])
+def test_carga_exige_sha_completo_y_dispositivo_explicito(cargar, revision, dispositivo):
+    with pytest.raises(ValueError):
+        cargar(revision, dispositivo)
 
 
 def test_noche_considera_intervalo_completo_y_no_solo_inicio(config):
