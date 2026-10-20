@@ -1,9 +1,10 @@
 """T05: evaluación pareada de beta (A) frente a Chronos-2 (B) en el periodo reservado.
 
-Reutiliza sin cambios la física de T03 y el MPC y los pronosticadores de T04 (IDEA
-§§4–7): solo cambia el pronóstico. La referencia reactiva aplica la heurística de T03
-con la irradiancia realizada de cada hora; tiene información perfecta de la hora en
-curso, por lo que es una referencia y no una alternativa admisible.
+Análisis adicional: TimesFM 3.0 (C) con el mismo protocolo; cada alternativa se
+compara con A. Reutiliza sin cambios la física de T03 y el MPC y los pronosticadores
+de T04 (IDEA §§4–7): solo cambia el pronóstico. La referencia reactiva aplica la
+heurística de T03 con la irradiancia realizada de cada hora; tiene información
+perfecta de la hora en curso, por lo que es una referencia y no una alternativa admisible.
 """
 
 import hashlib
@@ -17,12 +18,22 @@ from .controlador import _periodo, _verificar_fisica, ejecutar_mpc
 from .pronosticos import mascara_noche
 from .simulador import PRIORIDAD_CRITICA, simular
 
-POLITICAS = ("beta", "chronos")  # A y B
+POLITICAS = ("beta", "chronos", "timesfm")  # A, B y C (análisis adicional)
+BASE = POLITICAS[0]  # cada alternativa se compara con A
+LETRAS = {"beta": "a", "chronos": "b", "timesfm": "c"}
 REFERENCIA = "reactiva"
 TOLERANCIA_WH = 1e-6  # misma tolerancia absoluta de los balances (IDEA §4.4)
 
 
 # --- 1. Ejecución pareada y verificaciones ---
+
+def _ramas(nombres):
+    """Ramas presentes en el orden de POLITICAS: beta y al menos una alternativa."""
+    ramas = tuple(n for n in POLITICAS if n in nombres)
+    if set(nombres) - set(POLITICAS) or BASE not in ramas or len(ramas) < 2:
+        raise ValueError(f"pronosticadores: se requiere beta y al menos una de {POLITICAS[1:]}")
+    return ramas
+
 
 def _instrumentar(pronosticar, registro, contexto):
     """Rechaza historia no admisible y mide la inferencia de cada origen."""
@@ -64,44 +75,49 @@ def ejecutar_reactiva(caso, inicio, fin):
 
 
 def verificar_pareo(resultados, registros):
-    """A y B reciben por origen la misma demanda, estado, contexto, bloques y rangos.
+    """Cada alternativa recibe por origen la misma demanda, estado, contexto, bloques y rangos que A.
 
     Los bloques y rangos comunes son el análogo de los números aleatorios comunes
     del artículo (§3.1). Cada bloque histórico debe terminar antes del origen.
     """
-    a, b = (resultados[nombre] for nombre in POLITICAS)
+    ramas = _ramas(registros)
+    a = resultados[BASE]
     claves = ["t", "carga_id", "demanda_wh", "solicitada", "prioridad_supuesta"]
-    if not a["cargas"][claves].equals(b["cargas"][claves]):
-        raise ValueError("pareo: A y B no evalúan la misma demanda")
     iniciales = [r["baterias"].groupby("bateria_id")["inicial_wh"].first() for r in resultados.values()]
     if any(not inicial.equals(iniciales[0]) for inicial in iniciales):
         raise ValueError("pareo: las políticas no parten del mismo estado de baterías")
     columnas = ["origen_utc", "horizonte", "contexto_fin_utc", "contexto_sha256"]
-    registro_a, registro_b = (pd.DataFrame(registros[nombre])[columnas] for nombre in POLITICAS)
-    if not registro_a.equals(registro_b):
-        raise ValueError("pareo: A y B no reciben los mismos orígenes y contextos")
+    registro_a = pd.DataFrame(registros[BASE])[columnas]
+    for nombre in ramas[1:]:
+        b = resultados[nombre]
+        if not a["cargas"][claves].equals(b["cargas"][claves]):
+            raise ValueError(f"pareo: beta y {nombre} no evalúan la misma demanda")
+        if not registro_a.equals(pd.DataFrame(registros[nombre])[columnas]):
+            raise ValueError(f"pareo: beta y {nombre} no reciben los mismos orígenes y contextos")
+        for pa, pb in zip(a["pronosticos"], b["pronosticos"], strict=True):
+            if (pa["origen_utc"] != pb["origen_utc"] or pa["semilla"] != pb["semilla"]
+                    or not pa["bloques"].equals(pb["bloques"]) or not np.array_equal(pa["rangos"], pb["rangos"])):
+                raise ValueError(f"pareo: escenarios distintos en {nombre}, {pa['origen_utc'].isoformat()}")
     if not registro_a["contexto_fin_utc"].eq(registro_a["origen_utc"]).all():
         raise ValueError("filtración: un contexto no termina exactamente en su origen")
-    for pa, pb in zip(a["pronosticos"], b["pronosticos"], strict=True):
-        if (pa["origen_utc"] != pb["origen_utc"] or pa["semilla"] != pb["semilla"]
-                or not pa["bloques"].equals(pb["bloques"]) or not np.array_equal(pa["rangos"], pb["rangos"])):
-            raise ValueError(f"pareo: escenarios distintos en {pa['origen_utc'].isoformat()}")
+    for pa in a["pronosticos"]:  # los bloques son comunes a todas las ramas
         if (pa["bloques"] + pd.Timedelta(hours=24) > pa["origen_utc"]).any():
             raise ValueError(f"filtración: bloque posterior al origen {pa['origen_utc'].isoformat()}")
     return dict(origenes=len(registro_a), filtraciones=0, entradas_comunes=True)
 
 
 def evaluar(caso, pronosticadores, *, inicio=None, fin=None):
-    """Ejecuta A, B y la referencia en el mismo periodo, verifica física y pareo.
+    """Ejecuta A, las alternativas presentes y la referencia; verifica física y pareo.
 
-    `pronosticadores` contiene los callbacks de controlador.proveedores (o dobles).
-    Las tres políticas parten del estado configurado; después, cada una conserva
-    sus propios estados realizados, sin igualarlos.
+    `pronosticadores` contiene los callbacks de controlador.proveedores (o dobles):
+    beta y chronos, más timesfm si se carga C. Todas las políticas parten del estado
+    configurado; después, cada una conserva sus propios estados realizados, sin igualarlos.
     """
+    ramas = _ramas(pronosticadores)
     inicio, fin, _ = _periodo_evaluacion(caso, inicio, fin)
     contexto = caso.configuracion["pronosticos"]["contexto"]
     resultados, registros, tiempos = {}, {}, {}
-    for nombre in POLITICAS:
+    for nombre in ramas:
         registros[nombre] = []
         reloj = perf_counter()
         resultados[nombre] = ejecutar_mpc(
@@ -111,7 +127,7 @@ def evaluar(caso, pronosticadores, *, inicio=None, fin=None):
     resultados[REFERENCIA] = ejecutar_reactiva(caso, inicio, fin)
     tiempos[f"{REFERENCIA}_s"] = perf_counter() - reloj
     fisica = {nombre: _verificar_fisica(resultado, caso.configuracion) for nombre, resultado in resultados.items()}
-    return dict(inicio_utc=inicio, fin_utc=fin, resultados=resultados, registros=registros,
+    return dict(inicio_utc=inicio, fin_utc=fin, politicas=ramas, resultados=resultados, registros=registros,
                 fisica=fisica, pareo=verificar_pareo(resultados, registros), tiempos=tiempos)
 
 
@@ -134,7 +150,7 @@ def verificar_reproducibilidad(caso, pronosticadores, evaluacion):
     columnas = {"cargas": ["atendida_wh", "comprometida_wh"], "horas": ["fv_wh", "atendida_wh", "vertido_wh"],
                 "baterias": ["inicial_wh", "carga_wh", "descarga_wh", "final_wh"]}
     max_wh, max_cuantiles = 0., 0.
-    for nombre in POLITICAS:
+    for nombre in evaluacion["politicas"]:
         original = evaluacion["resultados"][nombre]
         repeticion = ejecutar_mpc(caso, pronosticadores[nombre], inicio=inicio, fin=fin_corto)
         for tabla, campos in columnas.items():
@@ -259,7 +275,7 @@ def metricas_servicio(resultado, configuracion):
 
 
 def diario(resultados, calendario):
-    """J, S_pond y energía no atendida por día local; ΔJ = J_B − J_A si están ambas ramas."""
+    """J, S_pond y energía no atendida por día local; ΔJ = J_rama − J_A por alternativa."""
     fechas = calendario.set_index("t")["inicio_intervalo"].dt.date
     columnas = {}
     for nombre, resultado in resultados.items():
@@ -272,26 +288,30 @@ def diario(resultados, calendario):
         columnas[f"S_pond_{nombre}"] = dia["beneficio"] / dia["ponderada"].where(dia["ponderada"] > 0)
         columnas[f"no_atendida_wh_{nombre}"] = dia["no_atendida_wh"]
     tabla = pd.DataFrame(columnas)
-    if set(POLITICAS) <= set(resultados):
-        tabla["delta_J"] = tabla["J_chronos"] - tabla["J_beta"]
-        tabla["delta_S_pond"] = tabla["S_pond_chronos"] - tabla["S_pond_beta"]
+    for nombre in POLITICAS[1:]:
+        if BASE in resultados and nombre in resultados:
+            tabla[f"delta_J_{nombre}"] = tabla[f"J_{nombre}"] - tabla[f"J_{BASE}"]
+            tabla[f"delta_S_pond_{nombre}"] = tabla[f"S_pond_{nombre}"] - tabla[f"S_pond_{BASE}"]
     return tabla.rename_axis("fecha").reset_index()
 
 
-def resumir_diferencias(tabla):
-    """Descripción de ΔJ diario, sin pruebas de significancia (resultados exploratorios)."""
-    delta = tabla["delta_J"]
+def resumir_diferencias(tabla, nombre):
+    """ΔJ diario de una alternativa frente a A, sin pruebas de significancia (exploratorio)."""
+    delta = tabla[f"delta_J_{nombre}"]
     return dict(dias=len(delta), media=float(delta.mean()), mediana=float(delta.median()),
                 minimo=float(delta.min()), maximo=float(delta.max()),
-                dias_b_mayor=int((delta > TOLERANCIA_WH).sum()),
+                dias_mayor=int((delta > TOLERANCIA_WH).sum()),
                 dias_iguales=int((delta.abs() <= TOLERANCIA_WH).sum()),
-                dias_b_menor=int((delta < -TOLERANCIA_WH).sum()))
+                dias_menor=int((delta < -TOLERANCIA_WH).sum()))
 
 
-# --- 4. Resumen, tabla A/B, gráficas y comando ---
+# --- 4. Resumen, tabla comparativa, gráficas y comando ---
 
-ETIQUETAS = {"beta": "A — beta", "chronos": "B — Chronos-2", REFERENCIA: "Referencia reactiva"}
-COLORES = {"beta": "#2a78d6", "chronos": "#eb6834", REFERENCIA: "#1baf7a"}  # paleta validada (CVD)
+ETIQUETAS = {"beta": "A — beta", "chronos": "B — Chronos-2", "timesfm": "C — TimesFM 3.0",
+             REFERENCIA: "Referencia reactiva"}
+# Paleta validada (CVD), ranuras 1–4 en orden; las líneas se dibujan en ese orden para
+# que el amarillo de C no quede junto al naranja de B (no superan juntos el piso normal).
+COLORES = {"beta": "#2a78d6", "chronos": "#eb6834", REFERENCIA: "#1baf7a", "timesfm": "#eda100"}
 TINTA, TINTA_SECUNDARIA, TINTA_TENUE = "#0b0b0b", "#52514e", "#898781"
 SUPERFICIE, REJILLA, EJE = "#fcfcfb", "#e1e0d9", "#c3c2b7"
 FILAS_PRONOSTICO = (
@@ -313,9 +333,12 @@ FILAS_SERVICIO = (
     ("Vertido", "Wh", "vertido_wh"),
 )
 SUPUESTOS = [
-    "demanda sintética programada y conocida, común a A, B y referencia; no es medición ni pronóstico de demanda",
+    "demanda sintética programada y conocida, común a todas las ramas y la referencia; no es medición ni pronóstico de demanda",
     "ERA5 es reanálisis, no sensor local; available_at = fin del intervalo es una idealización",
     "beta2 por hora local (loc=0, escala=1.05×máximo positivo) y Chronos-2 zero-shot con la misma historia de 336 h",
+    "análisis adicional C: TimesFM 3.0 zero-shot con la misma historia; sin promediado simétrico, recorte ni "
+    "reordenamiento internos; pesos con licencia no comercial, usados con fines académicos",
+    "lambda_terminal se calibró en desarrollo solo con A y B; C lo hereda sin recalibrar",
     "escenarios con bloques y rangos comunes por origen; no garantizan calibración conjunta",
     "MPC heurístico de T04 con lambda_terminal calibrado en desarrollo; sin garantía de optimalidad",
     "con calendario fijo no se encienden cargas no comprometidas (z ≤ x): un pronóstico pesimista reduce el servicio",
@@ -331,13 +354,14 @@ def _inferencias(registro):
 
 
 def resumir(caso, evaluacion):
-    """Métricas por política, tablas de pronóstico y diferencias diarias B − A."""
+    """Métricas por política, tablas de pronóstico y diferencias diarias frente a A."""
     config = caso.configuracion
+    ramas = evaluacion["politicas"]
     resultados = evaluacion["resultados"]
     real = caso.irradiancia_simulacion.set_index("inicio_utc")["ghi_w_m2"]
-    pronosticos = {n: tabla_pronosticos(resultados[n]["pronosticos"], real) for n in POLITICAS}
+    pronosticos = {n: tabla_pronosticos(resultados[n]["pronosticos"], real) for n in ramas}
     metricas = {n: dict(servicio=metricas_servicio(r, config)) for n, r in resultados.items()}
-    for nombre in POLITICAS:
+    for nombre in ramas:
         reservas = resultados[nombre]["decisiones"]["reserva"].value_counts().sort_index()
         metricas[nombre].update(
             pronostico=metricas_pronostico(pronosticos[nombre], config),
@@ -345,23 +369,30 @@ def resumir(caso, evaluacion):
             reservas_elegidas={f"{reserva:g}": int(veces) for reserva, veces in reservas.items()})
     por_dia = diario(resultados, caso.calendario)
     return dict(metricas=metricas, pronosticos=pronosticos, diario=por_dia,
-                diferencias_diarias=resumir_diferencias(por_dia))
+                diferencias_diarias={n: resumir_diferencias(por_dia, n) for n in ramas[1:]})
 
 
 def tabla_ab(caso, evaluacion, resumen):
-    """Una fila por indicador: A, B, diferencia B − A y referencia reactiva."""
+    """Una fila por indicador: cada rama, su diferencia con A y la referencia reactiva.
+
+    Con solo A y B conserva las columnas de T05; C añade `timesfm` y `diferencia_c_menos_a`.
+    """
     metricas = resumen["metricas"]
+    ramas = evaluacion["politicas"]
     filas = []
 
     def agregar(grupo, indicador, unidad, valores):
-        a, b = valores.get("beta"), valores.get("chronos")
-        diferencia = b - a if isinstance(a, (int, float)) and isinstance(b, (int, float)) else None
-        filas.append(dict(grupo=grupo, indicador=indicador, unidad=unidad, beta=a, chronos=b,
-                          diferencia_b_menos_a=diferencia, reactiva=valores.get(REFERENCIA)))
+        fila = dict(grupo=grupo, indicador=indicador, unidad=unidad, **{n: valores.get(n) for n in ramas})
+        a = valores.get(BASE)
+        for nombre in ramas[1:]:
+            b = valores.get(nombre)
+            numericos = isinstance(a, (int, float)) and isinstance(b, (int, float))
+            fila[f"diferencia_{LETRAS[nombre]}_menos_a"] = b - a if numericos else None
+        filas.append(dict(fila, reactiva=valores.get(REFERENCIA)))
 
     for indicador, unidad, subconjunto, campo in FILAS_PRONOSTICO:
         agregar("Pronóstico", indicador, unidad,
-                {n: metricas[n]["pronostico"][subconjunto]["corregido"][campo] for n in POLITICAS})
+                {n: metricas[n]["pronostico"][subconjunto]["corregido"][campo] for n in ramas})
     for indicador, unidad, campo in FILAS_SERVICIO:
         agregar("Servicio", indicador, unidad, {n: m["servicio"][campo] for n, m in metricas.items()})
     for bateria in caso.configuracion["baterias"]:
@@ -372,11 +403,11 @@ def tabla_ab(caso, evaluacion, resumen):
     agregar("Consistencia", "Violaciones físicas", "conteo",
             {n: f["violaciones_fisicas"] for n, f in evaluacion["fisica"].items()})
     agregar("Consistencia", "Filtraciones de futuro", "conteo",
-            {n: evaluacion["pareo"]["filtraciones"] for n in POLITICAS})
+            {n: evaluacion["pareo"]["filtraciones"] for n in ramas})
     agregar("Recursos", "Inferencia media por origen", "s",
-            {n: metricas[n]["inferencia"]["media_s"] for n in POLITICAS})
+            {n: metricas[n]["inferencia"]["media_s"] for n in ramas})
     agregar("Recursos", "Ejecución de la política", "s",
-            {n: evaluacion["tiempos"][f"{n}_s"] for n in (*POLITICAS, REFERENCIA)})
+            {n: evaluacion["tiempos"][f"{n}_s"] for n in (*ramas, REFERENCIA)})
     return pd.DataFrame(filas)
 
 
@@ -389,14 +420,21 @@ def _formato(valor, unidad):
 
 
 def tabla_markdown(tabla):
-    """Tabla A/B legible para el artículo; los valores exactos quedan en el CSV."""
-    lineas = ["| Grupo | Indicador | Unidad | A — beta | B — Chronos-2 | B − A | Referencia reactiva |",
-              "|---|---|---|---:|---:|---:|---:|"]
+    """Tabla comparativa legible para el artículo; los valores exactos quedan en el CSV."""
+    ramas = [n for n in POLITICAS if n in tabla.columns]
+    diferencias = [f"diferencia_{LETRAS[n]}_menos_a" for n in ramas[1:]]
+    titulos = ([ETIQUETAS[n] for n in ramas] + [f"{LETRAS[n].upper()} − A" for n in ramas[1:]]
+               + [ETIQUETAS[REFERENCIA]])
+    lineas = ["| " + " | ".join(["Grupo", "Indicador", "Unidad", *titulos]) + " |",
+              "|---|---|---|" + "---:|" * len(titulos)]
     for fila in tabla.to_dict("records"):
         unidad = fila["unidad"]
-        valores = [_formato(fila[c], unidad) for c in ("beta", "chronos", "diferencia_b_menos_a", "reactiva")]
-        if unidad == "fracción" and valores[2] != "—":
-            valores[2] = f"{100 * fila['diferencia_b_menos_a']:+.2f} p.p."
+        valores = []
+        for columna in (*ramas, *diferencias, REFERENCIA):
+            valor = _formato(fila[columna], unidad)
+            if columna in diferencias and unidad == "fracción" and valor != "—":
+                valor = f"{100 * fila[columna]:+.2f} p.p."
+            valores.append(valor)
         lineas.append("| " + " | ".join([fila["grupo"], fila["indicador"], unidad, *valores]) + " |")
     return "\n".join(lineas) + "\n"
 
@@ -415,7 +453,8 @@ def _estilo():
 def _leyenda_superior(figura, eje):
     """Leyenda común fuera de los ejes, para que no tape datos en ningún panel."""
     figura.tight_layout(rect=(0, 0, 1, 0.94))
-    figura.legend(*eje.get_legend_handles_labels(), loc="upper right", ncols=3)
+    manejadores, etiquetas = eje.get_legend_handles_labels()
+    figura.legend(manejadores, etiquetas, loc="upper right", ncols=len(etiquetas))
 
 
 def graficar(carpeta, caso, evaluacion, resumen):
@@ -428,12 +467,14 @@ def graficar(carpeta, caso, evaluacion, resumen):
     zona = caso.configuracion["zona_horaria"]
     replanificacion = caso.configuracion["replanificacion"]
     niveles = caso.configuracion["pronosticos"]["cuantiles"]
+    ramas = evaluacion["politicas"]
     resultados = evaluacion["resultados"]
+    orden = [n for n in COLORES if n in resultados]  # orden de la paleta validada
     hora_local = caso.calendario.set_index("t")["inicio_intervalo"]
     carpeta.mkdir(exist_ok=True)
     with plt.rc_context(_estilo()):
-        figura, ejes = plt.subplots(len(POLITICAS), 1, figsize=(12, 6.5), sharex=True, sharey=True)
-        for eje, nombre in zip(ejes, POLITICAS):
+        figura, ejes = plt.subplots(len(ramas), 1, figsize=(12, 3.25 * len(ramas)), sharex=True, sharey=True)
+        for eje, nombre in zip(ejes, ramas):
             tabla = resumen["pronosticos"][nombre]
             tabla = tabla.loc[tabla["anticipacion_h"] <= replanificacion].sort_values("inicio_utc")
             fechas = pd.DatetimeIndex(tabla["inicio_utc"]).tz_convert(zona)
@@ -452,7 +493,7 @@ def graficar(carpeta, caso, evaluacion, resumen):
         por_dia = resumen["diario"]
         fechas = pd.to_datetime(por_dia["fecha"])
         figura, ejes = plt.subplots(2, 1, figsize=(12, 6.5), sharex=True)
-        for nombre in resultados:
+        for nombre in orden:
             estilo = dict(color=COLORES[nombre], marker="o", markersize=4, label=ETIQUETAS[nombre])
             ejes[0].plot(fechas, por_dia[f"S_pond_{nombre}"], **estilo)
             ejes[1].plot(fechas, por_dia[f"no_atendida_wh_{nombre}"], **estilo)
@@ -469,8 +510,9 @@ def graficar(carpeta, caso, evaluacion, resumen):
         figura, ejes = plt.subplots(len(baterias), 1, figsize=(12, 3.2 * len(baterias)), sharex=True,
                                     squeeze=False)
         for eje, bateria in zip(ejes[:, 0], baterias):
-            for nombre, resultado in resultados.items():
-                flujos = resultado["baterias"].loc[resultado["baterias"]["bateria_id"].eq(bateria["id"])]
+            for nombre in orden:
+                flujos = resultados[nombre]["baterias"]
+                flujos = flujos.loc[flujos["bateria_id"].eq(bateria["id"])]
                 fin_hora = pd.DatetimeIndex(flujos["t"].map(hora_local)) + pd.Timedelta(hours=1)
                 eje.plot(fin_hora, flujos["final_wh"], color=COLORES[nombre], linewidth=1.2,
                          label=ETIQUETAS[nombre])
@@ -485,27 +527,32 @@ def graficar(carpeta, caso, evaluacion, resumen):
         figura.savefig(carpeta / "baterias.png", dpi=150)
         plt.close(figura)
 
-        figura, eje = plt.subplots(figsize=(12, 3.8))
-        eje.bar(fechas, por_dia["delta_J"], width=0.4, color=TINTA_SECUNDARIA)
-        eje.grid(axis="x", visible=False)
-        eje.axhline(0, color=EJE, linewidth=0.8)
-        eje.set_title("ΔJ diario = J(B, Chronos-2) − J(A, beta); positivo favorece a Chronos-2")
-        eje.set_ylabel("Wh·p")
-        eje.set_xlabel("Fecha local")
+        # Un panel gris por alternativa: sin identidad por color, como con una sola serie.
+        figura, ejes = plt.subplots(len(ramas) - 1, 1, figsize=(12, 3.8 * (len(ramas) - 1)), sharex=True,
+                                    sharey=True, squeeze=False)
+        for eje, nombre in zip(ejes[:, 0], ramas[1:]):
+            letra, modelo = ETIQUETAS[nombre].split(" — ")
+            eje.bar(fechas, por_dia[f"delta_J_{nombre}"], width=0.4, color=TINTA_SECUNDARIA)
+            eje.grid(axis="x", visible=False)
+            eje.axhline(0, color=EJE, linewidth=0.8)
+            eje.set_title(f"ΔJ diario = J({letra}, {modelo}) − J(A, beta); positivo favorece a {modelo}")
+            eje.set_ylabel("Wh·p")
+        ejes[-1, 0].set_xlabel("Fecha local")
         figura.tight_layout()
         figura.savefig(carpeta / "diferencias_diarias.png", dpi=150)
         plt.close(figura)
 
 
 def exportar(salida, caso, evaluacion, resumen, tabla):
-    """CSV por política (columna `politica`), pronósticos, diario, tabla A/B y figuras."""
+    """CSV por política (columna `politica`), pronósticos, diario, tabla comparativa y figuras."""
+    ramas = evaluacion["politicas"]
     resultados = evaluacion["resultados"]
     for nombre in ("cargas", "horas", "baterias"):
         pd.concat([r[nombre].assign(politica=p) for p, r in resultados.items()], ignore_index=True).to_csv(
             salida / f"{nombre}.csv", index=False)
-    pd.concat([resultados[p]["decisiones"].assign(politica=p) for p in POLITICAS], ignore_index=True).to_csv(
+    pd.concat([resultados[p]["decisiones"].assign(politica=p) for p in ramas], ignore_index=True).to_csv(
         salida / "decisiones.csv", index=False)
-    pd.concat([resumen["pronosticos"][p].assign(proveedor=p) for p in POLITICAS], ignore_index=True).to_csv(
+    pd.concat([resumen["pronosticos"][p].assign(proveedor=p) for p in ramas], ignore_index=True).to_csv(
         salida / "pronosticos.csv", index=False)
     resumen["diario"].to_csv(salida / "diario.csv", index=False)
     tabla.to_csv(salida / "tabla_ab.csv", index=False)
@@ -516,7 +563,7 @@ def exportar(salida, caso, evaluacion, resumen, tabla):
 def _registros(evaluacion):
     """Semillas, bloques, correcciones, contexto e inferencia de cada origen y proveedor."""
     filas = []
-    for nombre in POLITICAS:
+    for nombre in evaluacion["politicas"]:
         for p, r in zip(evaluacion["resultados"][nombre]["pronosticos"], evaluacion["registros"][nombre]):
             filas.append(dict(proveedor=nombre, origen_utc=p["origen_utc"].isoformat(), horizonte=r["horizonte"],
                               inferencia_s=r["inferencia_s"], contexto_sha256=r["contexto_sha256"],
@@ -526,7 +573,7 @@ def _registros(evaluacion):
 
 
 def main():
-    """Evalúa A/B en el periodo reservado y exporta tabla, gráficas y registro (T05)."""
+    """Evalúa A/B y el análisis adicional C en el periodo reservado; exporta tabla, gráficas y registro (T05)."""
     import argparse
     import importlib.metadata
     import json
@@ -535,7 +582,7 @@ def main():
     from .cli import codigo_sha256, entradas_sha256, entorno, sha256_de
     from .controlador import proveedores
     from .datos import cargar_caso
-    from .pronosticos import cargar_chronos
+    from .pronosticos import CHECKPOINT, CHECKPOINT_TIMESFM, cargar_chronos, cargar_timesfm
 
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
@@ -553,7 +600,10 @@ def main():
         opciones = config["pronosticos"]
         pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
         carga_s = perf_counter() - inicio
-        pronosticadores = proveedores(caso, pipeline)
+        reloj = perf_counter()
+        modelo = cargar_timesfm(opciones["revision_timesfm"], opciones["dispositivo"])
+        carga_timesfm_s = perf_counter() - reloj
+        pronosticadores = proveedores(caso, pipeline, modelo)
         evaluacion = evaluar(caso, pronosticadores)
         reproducibilidad = verificar_reproducibilidad(caso, pronosticadores, evaluacion)
         duracion = perf_counter() - inicio
@@ -561,18 +611,25 @@ def main():
         tabla = tabla_ab(caso, evaluacion, resumen)
         exportar(salida, caso, evaluacion, resumen, tabla)
         versiones = entorno()
-        for paquete in ("numpy", "scipy", "chronos-forecasting", "torch", "transformers", "astral", "matplotlib"):
+        for paquete in ("numpy", "scipy", "chronos-forecasting", "timesfm", "torch", "transformers",
+                        "huggingface-hub", "safetensors", "astral", "matplotlib"):
             versiones[paquete] = importlib.metadata.version(paquete)
         informe = dict(
-            alcance="T05: evaluación pareada A/B en el periodo reservado; resultados exploratorios",
+            alcance="T05: evaluación pareada A/B en el periodo reservado y análisis adicional C "
+                    "(TimesFM 3.0) con el mismo protocolo; resultados exploratorios",
             hipotesis="Chronos-2 puede reducir el error de irradiancia y mejorar la demanda ponderada "
-                      "atendida; también puede empatar o rendir peor (IDEA §1)",
+                      "atendida; también puede empatar o rendir peor (IDEA §1). C explora si otro "
+                      "modelo fundacional zero-shot cambia esa lectura",
+            modelos=dict(chronos=dict(checkpoint=CHECKPOINT, revision=opciones["revision"]),
+                         timesfm=dict(checkpoint=CHECKPOINT_TIMESFM, revision=opciones["revision_timesfm"],
+                                      licencia="pesos: TimesFM Non-Commercial License v1.0; código: Apache-2.0")),
             inicio_utc=evaluacion["inicio_utc"].isoformat(), fin_utc=evaluacion["fin_utc"].isoformat(),
             periodo_local=config["periodos"]["evaluacion"],
             estado_inicial={b["id"]: b["inicial_wh"] for b in config["baterias"]},
             semillas={"demanda": config["semilla"], "escenarios": config["semilla_escenarios"]},
             control={c: config[c] for c in ("horizonte", "replanificacion", "escenarios", "lambda_terminal")},
-            tiempos=dict(evaluacion["tiempos"], carga_chronos_s=carga_s, total_s=duracion),
+            tiempos=dict(evaluacion["tiempos"], carga_chronos_s=carga_s, carga_timesfm_s=carga_timesfm_s,
+                         total_s=duracion),
             verificaciones=dict(fisica=evaluacion["fisica"], pareo=evaluacion["pareo"],
                                 reproducibilidad=reproducibilidad),
             metricas=resumen["metricas"], diferencias_diarias=resumen["diferencias_diarias"],
@@ -592,8 +649,8 @@ def main():
             temporal.unlink(missing_ok=True)
     except (OSError, ValueError, ImportError, RuntimeError, KeyError, TypeError) as error:
         parser.exit(1, f"Error: {error}\nLa salida {args.salida} puede estar incompleta; no es válida.\n")
-    servicio = {n: resumen["metricas"][n]["servicio"]["S_pond"] for n in POLITICAS}
-    print(f"{salida}: S_pond beta={servicio['beta']:.6f}, chronos={servicio['chronos']:.6f}")
+    servicio = ", ".join(f"{n}={resumen['metricas'][n]['servicio']['S_pond']:.6f}" for n in evaluacion["politicas"])
+    print(f"{salida}: S_pond {servicio}")
 
 
 if __name__ == "__main__":

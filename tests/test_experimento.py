@@ -94,41 +94,90 @@ def test_diferencias_diarias_por_fecha_local():
         return dict(cargas=pd.DataFrame(dict(t=[0, 1], prioridad_supuesta=[1, 3], demanda_wh=[1., 1.],
                                              atendida_wh=atendida, no_atendida_wh=1. - np.array(atendida))))
 
-    tabla = experimento.diario({"beta": resultado([1., 0.]), "chronos": resultado([1., 1.])}, calendario)
+    tabla = experimento.diario({"beta": resultado([1., 0.]), "chronos": resultado([1., 1.]),
+                                "timesfm": resultado([0., 1.])}, calendario)
     assert [str(f) for f in tabla["fecha"]] == ["2025-03-03", "2025-03-04"]
-    assert tabla["delta_J"].tolist() == [0., 3.]
+    # J diario: A = (1, 0), B = (1, 3) y C = (0, 3); cada alternativa se resta de A.
+    assert tabla["delta_J_chronos"].tolist() == [0., 3.]
+    assert tabla["delta_J_timesfm"].tolist() == [-1., 3.]
     assert tabla["S_pond_beta"].tolist() == [1., 0.]
-    assert experimento.resumir_diferencias(tabla) == dict(
-        dias=2, media=1.5, mediana=1.5, minimo=0., maximo=3., dias_b_mayor=1, dias_iguales=1, dias_b_menor=0)
+    assert tabla["delta_S_pond_timesfm"].tolist() == [-1., 1.]
+    assert experimento.resumir_diferencias(tabla, "chronos") == dict(
+        dias=2, media=1.5, mediana=1.5, minimo=0., maximo=3., dias_mayor=1, dias_iguales=1, dias_menor=0)
+    assert experimento.resumir_diferencias(tabla, "timesfm") == dict(
+        dias=2, media=1., mediana=1., minimo=-1., maximo=3., dias_mayor=1, dias_iguales=0, dias_menor=1)
+    sin_c = experimento.diario({"beta": resultado([1., 0.]), "chronos": resultado([1., 1.])}, calendario)
+    assert "delta_J_timesfm" not in sin_c and sin_c["delta_J_chronos"].tolist() == [0., 3.]
 
 
 def test_proveedores_identicos_dan_ramas_identicas_y_pareadas():
     caso = _evaluable(real=(0., 1000., 0.), prioridades=(1, 1, 1))
     evaluacion = experimento.evaluar(caso, {nombre: _constante(1000.) for nombre in experimento.POLITICAS})
-    a, b = (evaluacion["resultados"][nombre] for nombre in experimento.POLITICAS)
-    for tabla in ("cargas", "horas", "baterias", "decisiones"):
-        pd.testing.assert_frame_equal(a[tabla], b[tabla])
+    assert evaluacion["politicas"] == ("beta", "chronos", "timesfm")
+    a = evaluacion["resultados"]["beta"]
+    for nombre in ("chronos", "timesfm"):
+        for tabla in ("cargas", "horas", "baterias", "decisiones"):
+            pd.testing.assert_frame_equal(a[tabla], evaluacion["resultados"][nombre][tabla])
     assert evaluacion["pareo"] == dict(origenes=3, filtraciones=0, entradas_comunes=True)
     assert all(f["violaciones_fisicas"] == 0 for f in evaluacion["fisica"].values())
-    registro = pd.DataFrame(evaluacion["registros"]["beta"])
-    assert registro["contexto_fin_utc"].eq(registro["origen_utc"]).all()
-    assert registro["horizonte"].tolist() == [2, 2, 1]
+    for nombre in experimento.POLITICAS:
+        registro = pd.DataFrame(evaluacion["registros"][nombre])
+        assert registro["contexto_fin_utc"].eq(registro["origen_utc"]).all()
+        assert registro["horizonte"].tolist() == [2, 2, 1]
     tabla = experimento.diario(evaluacion["resultados"], caso.calendario)
-    assert (tabla["delta_J"] == 0).all()
+    assert (tabla[["delta_J_chronos", "delta_J_timesfm"]] == 0).all().all()
+
+
+def test_anadir_c_no_cambia_a_ni_b():
+    caso = _evaluable(real=(0., 1000., 0., 1000.), prioridades=(1, 3, 1, 3))
+    dobles = {"beta": _constante(0.), "chronos": _constante(1000.)}
+    sin_c = experimento.evaluar(caso, dobles)
+    con_c = experimento.evaluar(caso, dict(dobles, timesfm=_constante(500.)))
+    assert sin_c["politicas"] == ("beta", "chronos") and con_c["politicas"] == experimento.POLITICAS
+    for nombre in ("beta", "chronos", experimento.REFERENCIA):
+        for tabla in ("cargas", "horas", "baterias"):
+            pd.testing.assert_frame_equal(sin_c["resultados"][nombre][tabla], con_c["resultados"][nombre][tabla])
+    for nombre in ("beta", "chronos"):
+        pd.testing.assert_frame_equal(sin_c["resultados"][nombre]["decisiones"],
+                                      con_c["resultados"][nombre]["decisiones"])
+    assert sin_c["pareo"] == con_c["pareo"]
+    tablas = [experimento.tabla_ab(caso, e, experimento.resumir(caso, e)) for e in (sin_c, con_c)]
+    columnas = ["grupo", "indicador", "unidad", "beta", "chronos", "diferencia_b_menos_a", "reactiva"]
+    sin_tiempos = [t.loc[t["grupo"].ne("Recursos"), columnas].reset_index(drop=True) for t in tablas]
+    pd.testing.assert_frame_equal(*sin_tiempos)
+
+
+def test_tabla_sin_c_conserva_columnas_y_formato_ab():
+    caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
+    evaluacion = experimento.evaluar(caso, {"beta": _constante(0.), "chronos": _constante(1000.)})
+    tabla = experimento.tabla_ab(caso, evaluacion, experimento.resumir(caso, evaluacion))
+    assert list(tabla.columns) == ["grupo", "indicador", "unidad", "beta", "chronos",
+                                   "diferencia_b_menos_a", "reactiva"]
+    texto = experimento.tabla_markdown(tabla)
+    assert texto.startswith("| Grupo | Indicador | Unidad | A — beta | B — Chronos-2 | B − A | Referencia reactiva |\n"
+                            "|---|---|---|---:|---:|---:|---:|\n")
+    assert "| Servicio | J realizado | Wh·p | 3.000 | 4.000 | 1.000 | 4.000 |" in texto
+
+
+@pytest.mark.parametrize("nombres", [("chronos", "timesfm"), ("beta",), ("beta", "chronos", "otro")])
+def test_evaluar_exige_beta_y_alternativas_conocidas(nombres):
+    caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
+    with pytest.raises(ValueError, match="pronosticadores"):
+        experimento.evaluar(caso, {n: _constante(0.) for n in nombres})
 
 
 def test_ramas_conservan_estados_distintos_y_la_referencia_reacciona():
     # Anticipación de IDEA §6: A sin sol futuro reserva la batería; B la gasta en t=0.
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
     evaluacion = experimento.evaluar(caso, {"beta": _constante(0.), "chronos": _constante(1000.)})
-    a, b, ref = (evaluacion["resultados"][n] for n in (*experimento.POLITICAS, experimento.REFERENCIA))
+    a, b, ref = (evaluacion["resultados"][n] for n in ("beta", "chronos", experimento.REFERENCIA))
     assert a["cargas"]["z"].tolist() == [0, 1] and b["cargas"]["z"].tolist() == [1, 1]
     assert a["baterias"]["inicial_wh"].tolist() == [1., 1.]
     assert b["baterias"]["inicial_wh"].tolist() == [1., 0.]
     assert (a["resumen"]["J"], b["resumen"]["J"], ref["resumen"]["J"]) == (3., 4., 4.)
     assert ref["cargas"]["x"].tolist() == ref["cargas"]["z"].tolist() == [1, 1]
     tabla = experimento.diario(evaluacion["resultados"], caso.calendario)
-    assert tabla["delta_J"].sum() == 1.
+    assert tabla["delta_J_chronos"].sum() == 1.
 
 
 def test_instrumentar_rechaza_historia_no_admisible():
@@ -152,11 +201,17 @@ def test_rechaza_fechas_fuera_de_evaluacion(inicio, fin):
         experimento.evaluar(caso, {n: _constante(0.) for n in experimento.POLITICAS}, inicio=inicio, fin=fin)
 
 
-def test_pareo_detecta_escenarios_distintos():
+@pytest.mark.parametrize("nombre", ["chronos", "timesfm"])
+def test_pareo_detecta_escenarios_y_contextos_distintos(nombre):
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
-    evaluacion = experimento.evaluar(caso, {n: _constante(0.) for n in experimento.POLITICAS})
-    evaluacion["resultados"]["chronos"]["pronosticos"][0]["semilla"] = [0, 0]
-    with pytest.raises(ValueError, match="escenarios distintos"):
+    dobles = {n: _constante(0.) for n in experimento.POLITICAS}
+    evaluacion = experimento.evaluar(caso, dobles)
+    evaluacion["resultados"][nombre]["pronosticos"][0]["semilla"] = [0, 0]
+    with pytest.raises(ValueError, match=f"escenarios distintos en {nombre}"):
+        experimento.verificar_pareo(evaluacion["resultados"], evaluacion["registros"])
+    evaluacion = experimento.evaluar(caso, dobles)
+    evaluacion["registros"][nombre][0]["contexto_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match=f"beta y {nombre} no reciben los mismos orígenes y contextos"):
         experimento.verificar_pareo(evaluacion["resultados"], evaluacion["registros"])
 
 
@@ -179,25 +234,26 @@ def test_reproducibilidad_detecta_un_pronosticador_inestable():
         vistos.add(origen)
         return _cuantiles([valor] * horizonte, origen)
 
-    pronosticadores = {"beta": _constante(0.), "chronos": inestable}
+    pronosticadores = {"beta": _constante(0.), "chronos": _constante(1000.), "timesfm": inestable}
     evaluacion = experimento.evaluar(caso, pronosticadores)
-    with pytest.raises(ValueError, match="reproducibilidad: chronos"):
+    with pytest.raises(ValueError, match="reproducibilidad: timesfm"):
         experimento.verificar_reproducibilidad(caso, pronosticadores, evaluacion)
 
 
 @pytest.fixture
 def comando(tmp_path, monkeypatch):
-    """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
+    """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2 y TimesFM."""
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
     caso.configuracion["semilla"] = 20261018
-    caso.configuracion["pronosticos"].update(revision="a" * 40, dispositivo="cpu")
+    caso.configuracion["pronosticos"].update(revision="a" * 40, revision_timesfm="b" * 40, dispositivo="cpu")
     config = tmp_path / "config.json"
     config.write_text(json.dumps(caso.configuracion), encoding="utf-8")
     caso.rutas = {"configuracion": config}
-    dobles = {"beta": _constante(0.), "chronos": _constante(1000.)}
+    dobles = {"beta": _constante(0.), "chronos": _constante(1000.), "timesfm": _constante(1000.)}
     monkeypatch.setattr("src.datos.cargar_caso", lambda ruta: caso)
     monkeypatch.setattr("src.pronosticos.cargar_chronos", lambda revision, dispositivo: object())
-    monkeypatch.setattr("src.controlador.proveedores", lambda caso, pipeline: dobles)
+    monkeypatch.setattr("src.pronosticos.cargar_timesfm", lambda revision, dispositivo: object())
+    monkeypatch.setattr("src.controlador.proveedores", lambda caso, pipeline, modelo=None: dobles)
     salida = tmp_path / "t05"
     monkeypatch.setattr(sys, "argv", ["experimento", "--config", str(config), "--salida", str(salida)])
     return config, salida, config.read_bytes()
@@ -216,15 +272,18 @@ def test_comando_exporta_tabla_graficas_y_registro_sin_tocar_entradas(comando):
     assert {f["violaciones_fisicas"] for f in verificaciones["fisica"].values()} == {0}
     assert verificaciones["pareo"]["filtraciones"] == 0 and verificaciones["reproducibilidad"]["coincide"]
     assert informe["metricas"]["beta"]["reservas_elegidas"] == {"0.25": 1, "0": 1}
-    assert informe["diferencias_diarias"]["dias_b_mayor"] == 1
-    # Contraste a mano de una fila de la tabla A/B con los CSV exportados.
+    assert [informe["diferencias_diarias"][n]["dias_mayor"] for n in ("chronos", "timesfm")] == [1, 1]
+    assert informe["modelos"]["timesfm"]["revision"] == "b" * 40 and "carga_timesfm_s" in informe["tiempos"]
+    assert set(pd.read_csv(salida / "pronosticos.csv")["proveedor"]) == {"beta", "chronos", "timesfm"}
+    # Contraste a mano de una fila de la tabla comparativa con los CSV exportados.
     horas = pd.read_csv(salida / "horas.csv")
     tabla = pd.read_csv(salida / "tabla_ab.csv").set_index(["indicador", "unidad"])
-    for politica in ("beta", "chronos", "reactiva"):
+    for politica in ("beta", "chronos", "timesfm", "reactiva"):
         assert tabla.loc[("Energía no atendida", "Wh"), politica] == horas.loc[
             horas.politica.eq(politica), "no_atendida_wh"].sum()
     assert tabla.loc[("J realizado", "Wh·p"), "diferencia_b_menos_a"] == 1.
-    assert "| Servicio | J realizado | Wh·p | 3.000 | 4.000 | 1.000 | 4.000 |" in (
+    assert tabla.loc[("J realizado", "Wh·p"), "diferencia_c_menos_a"] == 1.
+    assert "| Servicio | J realizado | Wh·p | 3.000 | 4.000 | 4.000 | 1.000 | 1.000 | 4.000 |" in (
         salida / "tabla_ab.md").read_text(encoding="utf-8")
 
 
