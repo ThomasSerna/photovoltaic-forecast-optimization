@@ -9,6 +9,8 @@ y controlador MPC heurístico.
 **T04 completada:** referencia beta, escenarios y MPC; ensayo pareado verificado en CPU.
 **T05 completada:** evaluación pareada A/B en el periodo reservado, tabla, gráficas y
 borrador del artículo ([docs/articulo.md](docs/articulo.md)).
+**Análisis adicional C (rama `t05-timesfm`):** TimesFM 3.0 zero-shot con el mismo
+protocolo, verificado en CPU (ver «Análisis adicional: alternativa C»).
 El comando de preparación descrito abajo todavía **no ejecuta el simulador**
 ni los pronósticos. El alcance matemático y el experimento se explican en
 [docs/IDEA.md](docs/IDEA.md).
@@ -78,6 +80,22 @@ Se usa `amazon/chronos-2`, sin ajuste de pesos, fijado al commit
 El pipeline se carga una sola vez y se reutiliza entre orígenes. La primera
 carga necesita descargar pesos públicos; las siguientes utilizan la caché de
 Hugging Face. No hacen falta claves de API.
+
+**Alternativa C (análisis adicional, rama `t05-timesfm`).** El mismo extra instala
+`timesfm[torch]==3.0.2`, que no cambia las versiones de torch ni de transformers
+de `uv.lock`. Para cargar TimesFM 3.0 y pronosticar:
+
+- `cargar_timesfm(opciones["revision_timesfm"], opciones["dispositivo"])` carga
+  `google/timesfm-3.0-pytorch` en CPU/FP32, fijado al commit
+  `43046b85ec22d584a13f8098c2ed39c889e129c2`.
+- `pronosticar_timesfm(modelo, …)` tiene la misma firma y salida que
+  `pronosticar_chronos`.
+
+La primera carga descarga 1,32 GB de pesos. **Licencia:** los pesos de TimesFM 3.0
+se distribuyen bajo la [TimesFM Non-Commercial License v1.0](https://huggingface.co/google/timesfm-3.0-pytorch/blob/main/LICENSE),
+que solo permite uso no comercial ni productivo; aquí se usan con fines académicos y
+el repositorio no los redistribuye. El código de `timesfm` es Apache-2.0. Detalles y
+supuestos en IDEA §5.
 
 La interfaz compartida con beta es una tabla de cuantiles en W/m²:
 índice horario `inicio_utc` con zona UTC y columnas numéricas de probabilidad.
@@ -367,11 +385,15 @@ Después, cada rama conserva sus propios estados. La **referencia reactiva** apl
 la heurística de T03 con la GHI realizada de cada hora. Tiene información perfecta
 de la hora en curso: no es una alternativa admisible y no entra en la diferencia B − A.
 
+En la rama `t05-timesfm` el mismo comando carga también TimesFM 3.0 y añade la
+alternativa C como análisis adicional (sección siguiente). Con solo A y B, las
+columnas y el formato de la tabla A/B son los de esta sección.
+
 El comando verifica:
 
-- balances y cotas de las tres trayectorias (tolerancia de 1e-6 Wh), incluida la
+- balances y cotas de todas las trayectorias (tolerancia de 1e-6 Wh), incluida la
   dirección de carga y descarga;
-- el mismo hash de contexto, bloques, rangos y semilla para A y B en cada origen;
+- el mismo hash de contexto, bloques, rangos y semilla para cada rama y A en cada origen;
 - que ningún contexto ni bloque sea posterior al origen;
 - la repetición de las primeras 48 h de cada rama, exigiendo decisiones idénticas en
   las 30 h con horizonte completo;
@@ -380,16 +402,19 @@ El comando verifica:
 No modifica la configuración. Exige una carpeta nueva y publica `resumen.json` al
 final como marcador de éxito. Exporta:
 
-- `tabla_ab.csv` y `tabla_ab.md`: A, B, B − A y referencia por indicador.
+- `tabla_ab.csv` y `tabla_ab.md`: A, B, B − A y referencia por indicador; con C,
+  además `timesfm` y `diferencia_c_menos_a`.
 - `horas.csv`, `cargas.csv`, `baterias.csv` y `decisiones.csv`, con columna `politica`.
 - `pronosticos.csv`: crudos y corregidos por origen y anticipación, frente a ERA5.
-- `diario.csv`: J, S_pond y energía no atendida por día local, y ΔJ = J_B − J_A.
+- `diario.csv`: J, S_pond y energía no atendida por día local, y ΔJ de cada
+  alternativa frente a A (`delta_J_chronos`, `delta_J_timesfm`).
 - `figuras/`: `irradiancia.png`, `demanda_atendida.png`, `baterias.png` y
   `diferencias_diarias.png`.
 - `resumen.json`: verificaciones, métricas, reservas elegidas, semillas, bloques,
   tiempos, versiones, hashes y supuestos.
 
-Desde Python, `evaluar(caso, pronosticadores)` ejecuta y verifica las tres políticas.
+Desde Python, `evaluar(caso, pronosticadores)` ejecuta y verifica A, las alternativas
+presentes y la referencia.
 `resumir` calcula las métricas y `verificar_reproducibilidad` repite el tramo inicial.
 
 **Ensayo CPU verificado el 19 de octubre de 2026** (`results/t05_evaluacion_verificada/`,
@@ -450,6 +475,69 @@ byte a byte; en `tabla_ab.csv` solo cambian las filas de tiempos medidos. Las cu
 figuras de esta ejecución se copiaron a `docs/figuras/` para el artículo.
 Con 28 días, una sola realización y demanda sintética, estos resultados son
 exploratorios. No se aplican pruebas de significancia.
+
+## Análisis adicional: alternativa C (TimesFM 3.0)
+
+Es una adaptación del proyecto en la rama `t05-timesfm`; la pregunta principal sigue
+siendo A frente a B. C cambia solo el pronosticador por `google/timesfm-3.0-pytorch`:
+zero-shot, en CPU/FP32, con la misma historia de 336 h y los mismos cuantiles 0.1–0.9,
+corrección común, escenarios, MPC y λ_T=0. El λ_T se calibró en T04 solo con A y B y
+no se recalibró. Versión, revisión, banderas y licencia están en IDEA §5. El comando de
+T05 es el mismo y exporta las tres ramas.
+
+**Ensayo CPU verificado el 19 de octubre de 2026** (`results/t05_timesfm/`, excluido
+de Git y regenerable). Con C presente, A, B y la referencia coinciden **exactamente**
+con `results/t05_evaluacion_verificada/`: los mismos CSV por política, los mismos J,
+S_pond, métricas, reservas y ΔJ, y las mismas filas de la tabla sin tiempos.
+
+| Indicador | A — beta | B — Chronos-2 | C — TimesFM 3.0 | C − A |
+|---|---:|---:|---:|---:|
+| MAE diurno (W/m²) | 66.33 | 64.20 | 64.90 | −1.43 |
+| RMSE diurno (W/m²) | 101.17 | 98.92 | 98.38 | −2.79 |
+| Pinball diurno (W/m²) | 25.94 | 25.13 | 25.59 | −0.34 |
+| Cobertura 0.1–0.9 diurna (nominal 80 %) | 76.98 % | 80.95 % | 83.31 % | +6.33 p.p. |
+| MAE diurno, primeras 6 h (W/m²) | 66.97 | 60.77 | 61.59 | −5.39 |
+| J realizado (Wh·p) | 285714.424364 | 286220.023421 | 285418.068982 | −296.355382 |
+| S_pond | 0.9312263476 | 0.9328742419 | 0.9302604393 | −0.0009659083 |
+| Energía no atendida (Wh) | 16418.24 (11.06 %) | 16352.93 (11.02 %) | 16360.97 (11.02 %) | −57.27 |
+| Servicio crítico (p ≥ 3) | 100 % | 100 % | 100 % | 0 |
+| Horas con demanda atendida por completo | 93.01 % | 93.01 % | 93.15 % | +0.15 p.p. |
+| Compromisos incumplidos (carga·h) | 29 | 35 | 20 | −9 |
+
+**Pronóstico.** C mejora a beta en todas las métricas de pronóstico y queda cerca de
+Chronos-2; tiene el menor RMSE. Su banda 0.1–0.9 cubre algo más que el nivel nominal.
+Sus crudos traen más negativos y cruces que los de Chronos (6410 frente a 1616 valores
+negativos y 483 frente a 305 filas cruzadas, en 2652 filas), pero la corrección común
+apenas cambia su MAE diurno: de 64.92 a 64.90 W/m².
+
+**Servicio.** C obtiene el menor J: −0.10 % frente a A y −801.95 Wh·p frente a B. La
+diferencia con A se concentra en los mismos cuatro días que la de B:
+
+| Día | C − A (Wh·p) |
+|---|---:|
+| 4 de marzo | −225.27 |
+| 5 de marzo | −819.13 |
+| 6 de marzo | +668.05 |
+| 17 de marzo | +80.00 |
+
+Los otros 24 días son idénticos. C eligió ρ=0 en los 112 orígenes e incumplió menos
+compromisos, pero dejó más solicitudes sin comprometer (195, frente a 191 y 194).
+Atendió más cargas de prioridad 1 (72.2 %) y menos de prioridad 2 (91.2 %). Se repite la
+lectura de T05: un pronóstico mejor que beta no garantiza más servicio.
+
+**Verificación.** Cero violaciones físicas: error máximo del bus 5.7e-14 Wh y de
+batería 2.3e-13 Wh. Hubo cero filtraciones y la repetición de las primeras 48 h fue exacta.
+Una segunda ejecución completa produjo CSV de resultados idénticos byte a byte; en
+`tabla_ab.csv` solo cambian los tiempos medidos.
+
+**Costo computacional.** La ejecución completa duró 426.3 s, frente a 266.2 s sin C.
+La rama C tardó 137.1 s; su inferencia media fue de 0.179 s por origen, unas 7 veces
+la de Chronos-2 (0.026 s). La carga con pesos en caché fue de 1.2 s. La primera
+descarga, de 1.32 GB, tardó 17.4 s en esta red, y una prueba de humo aislada midió
+1.51 GB de RSS tras cargar C.
+
+Son resultados exploratorios, con una sola realización y sin pruebas de significancia.
+No hay cifras publicadas de TimesFM para este caso con las que contrastarlos.
 
 ## Configuración y regeneración
 
@@ -539,6 +627,8 @@ Los cinco CSV originales conservan su contenido. Se verifica conservación diari
 con tolerancia de 0,001 Wh y capacidad por solicitud con holgura de 1e-6 Wh por
 redondeo. T03 verifica los balances físicos horarios y T04 verifica el ensayo
 pareado de calibración en CPU. T05 verifica la evaluación reservada (sección anterior).
+Los pesos de TimesFM 3.0 (alternativa C) tienen licencia no comercial: el proyecto los
+usa con fines académicos, los descarga al ejecutar y no los redistribuye.
 Consultar `docs/datos.md` para datos/unidades y `docs/IDEA.md` para el protocolo
 experimental y las adaptaciones al [paper de Acuna et al.](https://doi.org/10.3390/en14102789).
 
