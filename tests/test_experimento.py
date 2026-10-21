@@ -95,17 +95,20 @@ def test_diferencias_diarias_por_fecha_local():
                                              atendida_wh=atendida, no_atendida_wh=1. - np.array(atendida))))
 
     tabla = experimento.diario({"beta": resultado([1., 0.]), "chronos": resultado([1., 1.]),
-                                "timesfm": resultado([0., 1.])}, calendario)
+                                "timesfm": resultado([0., 1.]), "t0": resultado([0., 0.])}, calendario)
     assert [str(f) for f in tabla["fecha"]] == ["2025-03-03", "2025-03-04"]
-    # J diario: A = (1, 0), B = (1, 3) y C = (0, 3); cada alternativa se resta de A.
+    # J diario: A = (1, 0), B = (1, 3), C = (0, 3) y D = (0, 0); cada alternativa se resta de A.
     assert tabla["delta_J_chronos"].tolist() == [0., 3.]
     assert tabla["delta_J_timesfm"].tolist() == [-1., 3.]
+    assert tabla["delta_J_t0"].tolist() == [-1., 0.]
     assert tabla["S_pond_beta"].tolist() == [1., 0.]
     assert tabla["delta_S_pond_timesfm"].tolist() == [-1., 1.]
     assert experimento.resumir_diferencias(tabla, "chronos") == dict(
         dias=2, media=1.5, mediana=1.5, minimo=0., maximo=3., dias_mayor=1, dias_iguales=1, dias_menor=0)
     assert experimento.resumir_diferencias(tabla, "timesfm") == dict(
         dias=2, media=1., mediana=1., minimo=-1., maximo=3., dias_mayor=1, dias_iguales=0, dias_menor=1)
+    assert experimento.resumir_diferencias(tabla, "t0") == dict(
+        dias=2, media=-.5, mediana=-.5, minimo=-1., maximo=0., dias_mayor=0, dias_iguales=1, dias_menor=1)
     sin_c = experimento.diario({"beta": resultado([1., 0.]), "chronos": resultado([1., 1.])}, calendario)
     assert "delta_J_timesfm" not in sin_c and sin_c["delta_J_chronos"].tolist() == [0., 3.]
 
@@ -113,9 +116,9 @@ def test_diferencias_diarias_por_fecha_local():
 def test_proveedores_identicos_dan_ramas_identicas_y_pareadas():
     caso = _evaluable(real=(0., 1000., 0.), prioridades=(1, 1, 1))
     evaluacion = experimento.evaluar(caso, {nombre: _constante(1000.) for nombre in experimento.POLITICAS})
-    assert evaluacion["politicas"] == ("beta", "chronos", "timesfm")
+    assert evaluacion["politicas"] == ("beta", "chronos", "timesfm", "t0")
     a = evaluacion["resultados"]["beta"]
-    for nombre in ("chronos", "timesfm"):
+    for nombre in ("chronos", "timesfm", "t0"):
         for tabla in ("cargas", "horas", "baterias", "decisiones"):
             pd.testing.assert_frame_equal(a[tabla], evaluacion["resultados"][nombre][tabla])
     assert evaluacion["pareo"] == dict(origenes=3, filtraciones=0, entradas_comunes=True)
@@ -125,7 +128,7 @@ def test_proveedores_identicos_dan_ramas_identicas_y_pareadas():
         assert registro["contexto_fin_utc"].eq(registro["origen_utc"]).all()
         assert registro["horizonte"].tolist() == [2, 2, 1]
     tabla = experimento.diario(evaluacion["resultados"], caso.calendario)
-    assert (tabla[["delta_J_chronos", "delta_J_timesfm"]] == 0).all().all()
+    assert (tabla[["delta_J_chronos", "delta_J_timesfm", "delta_J_t0"]] == 0).all().all()
 
 
 def test_anadir_c_no_cambia_a_ni_b():
@@ -133,7 +136,7 @@ def test_anadir_c_no_cambia_a_ni_b():
     dobles = {"beta": _constante(0.), "chronos": _constante(1000.)}
     sin_c = experimento.evaluar(caso, dobles)
     con_c = experimento.evaluar(caso, dict(dobles, timesfm=_constante(500.)))
-    assert sin_c["politicas"] == ("beta", "chronos") and con_c["politicas"] == experimento.POLITICAS
+    assert sin_c["politicas"] == ("beta", "chronos") and con_c["politicas"] == ("beta", "chronos", "timesfm")
     for nombre in ("beta", "chronos", experimento.REFERENCIA):
         for tabla in ("cargas", "horas", "baterias"):
             pd.testing.assert_frame_equal(sin_c["resultados"][nombre][tabla], con_c["resultados"][nombre][tabla])
@@ -143,6 +146,27 @@ def test_anadir_c_no_cambia_a_ni_b():
     assert sin_c["pareo"] == con_c["pareo"]
     tablas = [experimento.tabla_ab(caso, e, experimento.resumir(caso, e)) for e in (sin_c, con_c)]
     columnas = ["grupo", "indicador", "unidad", "beta", "chronos", "diferencia_b_menos_a", "reactiva"]
+    sin_tiempos = [t.loc[t["grupo"].ne("Recursos"), columnas].reset_index(drop=True) for t in tablas]
+    pd.testing.assert_frame_equal(*sin_tiempos)
+
+
+def test_anadir_d_no_cambia_a_b_ni_c():
+    caso = _evaluable(real=(0., 1000., 0., 1000.), prioridades=(1, 3, 1, 3))
+    dobles = {"beta": _constante(0.), "chronos": _constante(1000.), "timesfm": _constante(500.)}
+    sin_d = experimento.evaluar(caso, dobles)
+    con_d = experimento.evaluar(caso, dict(dobles, t0=_constante(250.)))
+    assert sin_d["politicas"] == ("beta", "chronos", "timesfm") and con_d["politicas"] == experimento.POLITICAS
+    for nombre in ("beta", "chronos", "timesfm", experimento.REFERENCIA):
+        for tabla in ("cargas", "horas", "baterias"):
+            pd.testing.assert_frame_equal(sin_d["resultados"][nombre][tabla], con_d["resultados"][nombre][tabla])
+    for nombre in ("beta", "chronos", "timesfm"):
+        pd.testing.assert_frame_equal(sin_d["resultados"][nombre]["decisiones"],
+                                      con_d["resultados"][nombre]["decisiones"])
+    assert sin_d["pareo"] == con_d["pareo"]
+    tablas = [experimento.tabla_ab(caso, e, experimento.resumir(caso, e)) for e in (sin_d, con_d)]
+    assert "t0" not in tablas[0] and {"t0", "diferencia_d_menos_a"} <= set(tablas[1].columns)
+    columnas = ["grupo", "indicador", "unidad", "beta", "chronos", "timesfm",
+                "diferencia_b_menos_a", "diferencia_c_menos_a", "reactiva"]
     sin_tiempos = [t.loc[t["grupo"].ne("Recursos"), columnas].reset_index(drop=True) for t in tablas]
     pd.testing.assert_frame_equal(*sin_tiempos)
 
@@ -159,7 +183,7 @@ def test_tabla_sin_c_conserva_columnas_y_formato_ab():
     assert "| Servicio | J realizado | Wh·p | 3.000 | 4.000 | 1.000 | 4.000 |" in texto
 
 
-@pytest.mark.parametrize("nombres", [("chronos", "timesfm"), ("beta",), ("beta", "chronos", "otro")])
+@pytest.mark.parametrize("nombres", [("chronos", "timesfm", "t0"), ("beta",), ("beta", "chronos", "otro")])
 def test_evaluar_exige_beta_y_alternativas_conocidas(nombres):
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
     with pytest.raises(ValueError, match="pronosticadores"):
@@ -201,7 +225,7 @@ def test_rechaza_fechas_fuera_de_evaluacion(inicio, fin):
         experimento.evaluar(caso, {n: _constante(0.) for n in experimento.POLITICAS}, inicio=inicio, fin=fin)
 
 
-@pytest.mark.parametrize("nombre", ["chronos", "timesfm"])
+@pytest.mark.parametrize("nombre", ["chronos", "timesfm", "t0"])
 def test_pareo_detecta_escenarios_y_contextos_distintos(nombre):
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
     dobles = {n: _constante(0.) for n in experimento.POLITICAS}
@@ -242,18 +266,22 @@ def test_reproducibilidad_detecta_un_pronosticador_inestable():
 
 @pytest.fixture
 def comando(tmp_path, monkeypatch):
-    """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2 y TimesFM."""
+    """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2, TimesFM y t0-gamma."""
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
     caso.configuracion["semilla"] = 20261018
-    caso.configuracion["pronosticos"].update(revision="a" * 40, revision_timesfm="b" * 40, dispositivo="cpu")
+    caso.configuracion["pronosticos"].update(revision="a" * 40, revision_timesfm="b" * 40, revision_t0="c" * 40,
+                                             dispositivo="cpu")
     config = tmp_path / "config.json"
     config.write_text(json.dumps(caso.configuracion), encoding="utf-8")
     caso.rutas = {"configuracion": config}
-    dobles = {"beta": _constante(0.), "chronos": _constante(1000.), "timesfm": _constante(1000.)}
+    dobles = {"beta": _constante(0.), "chronos": _constante(1000.), "timesfm": _constante(1000.),
+              "t0": _constante(0.)}
     monkeypatch.setattr("src.datos.cargar_caso", lambda ruta: caso)
     monkeypatch.setattr("src.pronosticos.cargar_chronos", lambda revision, dispositivo: object())
     monkeypatch.setattr("src.pronosticos.cargar_timesfm", lambda revision, dispositivo: object())
-    monkeypatch.setattr("src.controlador.proveedores", lambda caso, pipeline, modelo=None: dobles)
+    monkeypatch.setattr("src.pronosticos.cargar_t0", lambda revision, dispositivo: object())
+    monkeypatch.setattr("src.controlador.proveedores",
+                        lambda caso, pipeline, modelo_timesfm=None, modelo_t0=None: dobles)
     salida = tmp_path / "t05"
     monkeypatch.setattr(sys, "argv", ["experimento", "--config", str(config), "--salida", str(salida)])
     return config, salida, config.read_bytes()
@@ -272,18 +300,21 @@ def test_comando_exporta_tabla_graficas_y_registro_sin_tocar_entradas(comando):
     assert {f["violaciones_fisicas"] for f in verificaciones["fisica"].values()} == {0}
     assert verificaciones["pareo"]["filtraciones"] == 0 and verificaciones["reproducibilidad"]["coincide"]
     assert informe["metricas"]["beta"]["reservas_elegidas"] == {"0.25": 1, "0": 1}
-    assert [informe["diferencias_diarias"][n]["dias_mayor"] for n in ("chronos", "timesfm")] == [1, 1]
+    assert [informe["diferencias_diarias"][n]["dias_mayor"] for n in ("chronos", "timesfm", "t0")] == [1, 1, 0]
     assert informe["modelos"]["timesfm"]["revision"] == "b" * 40 and "carga_timesfm_s" in informe["tiempos"]
-    assert set(pd.read_csv(salida / "pronosticos.csv")["proveedor"]) == {"beta", "chronos", "timesfm"}
+    assert informe["modelos"]["t0"]["revision"] == "c" * 40 and "carga_t0_s" in informe["tiempos"]
+    assert not any(informe["modelos"]["t0"]["ajustes"].values())
+    assert set(pd.read_csv(salida / "pronosticos.csv")["proveedor"]) == {"beta", "chronos", "timesfm", "t0"}
     # Contraste a mano de una fila de la tabla comparativa con los CSV exportados.
     horas = pd.read_csv(salida / "horas.csv")
     tabla = pd.read_csv(salida / "tabla_ab.csv").set_index(["indicador", "unidad"])
-    for politica in ("beta", "chronos", "timesfm", "reactiva"):
+    for politica in ("beta", "chronos", "timesfm", "t0", "reactiva"):
         assert tabla.loc[("Energía no atendida", "Wh"), politica] == horas.loc[
             horas.politica.eq(politica), "no_atendida_wh"].sum()
     assert tabla.loc[("J realizado", "Wh·p"), "diferencia_b_menos_a"] == 1.
     assert tabla.loc[("J realizado", "Wh·p"), "diferencia_c_menos_a"] == 1.
-    assert "| Servicio | J realizado | Wh·p | 3.000 | 4.000 | 4.000 | 1.000 | 1.000 | 4.000 |" in (
+    assert tabla.loc[("J realizado", "Wh·p"), "diferencia_d_menos_a"] == 0.
+    assert "| Servicio | J realizado | Wh·p | 3.000 | 4.000 | 4.000 | 3.000 | 1.000 | 1.000 | 0.000 | 4.000 |" in (
         salida / "tabla_ab.md").read_text(encoding="utf-8")
 
 

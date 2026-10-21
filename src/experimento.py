@@ -1,9 +1,9 @@
 """T05: evaluación pareada de beta (A) frente a Chronos-2 (B) en el periodo reservado.
 
-Análisis adicional: TimesFM 3.0 (C) con el mismo protocolo; cada alternativa se
-compara con A. Reutiliza sin cambios la física de T03 y el MPC y los pronosticadores
-de T04 (IDEA §§4–7): solo cambia el pronóstico. La referencia reactiva aplica la
-heurística de T03 con la irradiancia realizada de cada hora; tiene información
+Análisis adicionales: TimesFM 3.0 (C) y t0-gamma (D) con el mismo protocolo; cada
+alternativa se compara con A. Reutiliza sin cambios la física de T03 y el MPC y los
+pronosticadores de T04 (IDEA §§4–7): solo cambia el pronóstico. La referencia reactiva
+aplica la heurística de T03 con la irradiancia realizada de cada hora; tiene información
 perfecta de la hora en curso, por lo que es una referencia y no una alternativa admisible.
 """
 
@@ -18,9 +18,9 @@ from .controlador import _periodo, _verificar_fisica, ejecutar_mpc
 from .pronosticos import mascara_noche
 from .simulador import PRIORIDAD_CRITICA, simular
 
-POLITICAS = ("beta", "chronos", "timesfm")  # A, B y C (análisis adicional)
+POLITICAS = ("beta", "chronos", "timesfm", "t0")  # A, B, C y D (C y D: análisis adicionales)
 BASE = POLITICAS[0]  # cada alternativa se compara con A
-LETRAS = {"beta": "a", "chronos": "b", "timesfm": "c"}
+LETRAS = {"beta": "a", "chronos": "b", "timesfm": "c", "t0": "d"}
 REFERENCIA = "reactiva"
 TOLERANCIA_WH = 1e-6  # misma tolerancia absoluta de los balances (IDEA §4.4)
 
@@ -110,8 +110,8 @@ def evaluar(caso, pronosticadores, *, inicio=None, fin=None):
     """Ejecuta A, las alternativas presentes y la referencia; verifica física y pareo.
 
     `pronosticadores` contiene los callbacks de controlador.proveedores (o dobles):
-    beta y chronos, más timesfm si se carga C. Todas las políticas parten del estado
-    configurado; después, cada una conserva sus propios estados realizados, sin igualarlos.
+    beta y chronos, más timesfm y t0 si se cargan C y D. Todas las políticas parten del
+    estado configurado; después, cada una conserva sus propios estados realizados, sin igualarlos.
     """
     ramas = _ramas(pronosticadores)
     inicio, fin, _ = _periodo_evaluacion(caso, inicio, fin)
@@ -308,10 +308,11 @@ def resumir_diferencias(tabla, nombre):
 # --- 4. Resumen, tabla comparativa, gráficas y comando ---
 
 ETIQUETAS = {"beta": "A — beta", "chronos": "B — Chronos-2", "timesfm": "C — TimesFM 3.0",
-             REFERENCIA: "Referencia reactiva"}
-# Paleta validada (CVD), ranuras 1–4 en orden; las líneas se dibujan en ese orden para
+             "t0": "D — t0-gamma", REFERENCIA: "Referencia reactiva"}
+# Paleta validada (CVD), ranuras 1–5 en orden; las líneas se dibujan en ese orden para
 # que el amarillo de C no quede junto al naranja de B (no superan juntos el piso normal).
-COLORES = {"beta": "#2a78d6", "chronos": "#eb6834", REFERENCIA: "#1baf7a", "timesfm": "#eda100"}
+COLORES = {"beta": "#2a78d6", "chronos": "#eb6834", REFERENCIA: "#1baf7a", "timesfm": "#eda100",
+           "t0": "#e87ba4"}
 TINTA, TINTA_SECUNDARIA, TINTA_TENUE = "#0b0b0b", "#52514e", "#898781"
 SUPERFICIE, REJILLA, EJE = "#fcfcfb", "#e1e0d9", "#c3c2b7"
 FILAS_PRONOSTICO = (
@@ -338,7 +339,9 @@ SUPUESTOS = [
     "beta2 por hora local (loc=0, escala=1.05×máximo positivo) y Chronos-2 zero-shot con la misma historia de 336 h",
     "análisis adicional C: TimesFM 3.0 zero-shot con la misma historia; sin promediado simétrico, recorte ni "
     "reordenamiento internos; pesos con licencia no comercial, usados con fines académicos",
-    "lambda_terminal se calibró en desarrollo solo con A y B; C lo hereda sin recalibrar",
+    "análisis adicional D: t0-gamma zero-shot con la misma historia; sin recorte de faltantes iniciales, "
+    "promediado simétrico, recorte a no negativos ni redondeo a enteros; código y pesos Apache-2.0",
+    "lambda_terminal se calibró en desarrollo solo con A y B; C y D lo heredan sin recalibrar",
     "escenarios con bloques y rangos comunes por origen; no garantizan calibración conjunta",
     "MPC heurístico de T04 con lambda_terminal calibrado en desarrollo; sin garantía de optimalidad",
     "con calendario fijo no se encienden cargas no comprometidas (z ≤ x): un pronóstico pesimista reduce el servicio",
@@ -375,7 +378,8 @@ def resumir(caso, evaluacion):
 def tabla_ab(caso, evaluacion, resumen):
     """Una fila por indicador: cada rama, su diferencia con A y la referencia reactiva.
 
-    Con solo A y B conserva las columnas de T05; C añade `timesfm` y `diferencia_c_menos_a`.
+    Con solo A y B conserva las columnas de T05; C añade `timesfm` y `diferencia_c_menos_a`,
+    y D, `t0` y `diferencia_d_menos_a`.
     """
     metricas = resumen["metricas"]
     ramas = evaluacion["politicas"]
@@ -573,7 +577,7 @@ def _registros(evaluacion):
 
 
 def main():
-    """Evalúa A/B y el análisis adicional C en el periodo reservado; exporta tabla, gráficas y registro (T05)."""
+    """Evalúa A/B y los análisis C y D en el periodo reservado; exporta tabla, gráficas y registro (T05)."""
     import argparse
     import importlib.metadata
     import json
@@ -582,7 +586,9 @@ def main():
     from .cli import codigo_sha256, entradas_sha256, entorno, sha256_de
     from .controlador import proveedores
     from .datos import cargar_caso
-    from .pronosticos import CHECKPOINT, CHECKPOINT_TIMESFM, cargar_chronos, cargar_timesfm
+    from .pronosticos import (
+        CHECKPOINT, CHECKPOINT_T0, CHECKPOINT_TIMESFM, cargar_chronos, cargar_t0, cargar_timesfm,
+    )
 
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
@@ -603,7 +609,10 @@ def main():
         reloj = perf_counter()
         modelo = cargar_timesfm(opciones["revision_timesfm"], opciones["dispositivo"])
         carga_timesfm_s = perf_counter() - reloj
-        pronosticadores = proveedores(caso, pipeline, modelo)
+        reloj = perf_counter()
+        modelo_t0 = cargar_t0(opciones["revision_t0"], opciones["dispositivo"])
+        carga_t0_s = perf_counter() - reloj
+        pronosticadores = proveedores(caso, pipeline, modelo, modelo_t0)
         evaluacion = evaluar(caso, pronosticadores)
         reproducibilidad = verificar_reproducibilidad(caso, pronosticadores, evaluacion)
         duracion = perf_counter() - inicio
@@ -611,25 +620,30 @@ def main():
         tabla = tabla_ab(caso, evaluacion, resumen)
         exportar(salida, caso, evaluacion, resumen, tabla)
         versiones = entorno()
-        for paquete in ("numpy", "scipy", "chronos-forecasting", "timesfm", "torch", "transformers",
-                        "huggingface-hub", "safetensors", "astral", "matplotlib"):
+        for paquete in ("numpy", "scipy", "chronos-forecasting", "timesfm", "tfc-t0", "torch", "transformers",
+                        "huggingface-hub", "safetensors", "einops", "rotary-embedding-torch", "jaxtyping",
+                        "astral", "matplotlib"):
             versiones[paquete] = importlib.metadata.version(paquete)
         informe = dict(
-            alcance="T05: evaluación pareada A/B en el periodo reservado y análisis adicional C "
-                    "(TimesFM 3.0) con el mismo protocolo; resultados exploratorios",
+            alcance="T05: evaluación pareada A/B en el periodo reservado y análisis adicionales C "
+                    "(TimesFM 3.0) y D (t0-gamma) con el mismo protocolo; resultados exploratorios",
             hipotesis="Chronos-2 puede reducir el error de irradiancia y mejorar la demanda ponderada "
-                      "atendida; también puede empatar o rendir peor (IDEA §1). C explora si otro "
-                      "modelo fundacional zero-shot cambia esa lectura",
+                      "atendida; también puede empatar o rendir peor (IDEA §1). C y D exploran si otros "
+                      "modelos fundacionales zero-shot cambian esa lectura",
             modelos=dict(chronos=dict(checkpoint=CHECKPOINT, revision=opciones["revision"]),
                          timesfm=dict(checkpoint=CHECKPOINT_TIMESFM, revision=opciones["revision_timesfm"],
-                                      licencia="pesos: TimesFM Non-Commercial License v1.0; código: Apache-2.0")),
+                                      licencia="pesos: TimesFM Non-Commercial License v1.0; código: Apache-2.0"),
+                         t0=dict(checkpoint=CHECKPOINT_T0, revision=opciones["revision_t0"],
+                                 licencia="código y pesos: Apache-2.0",
+                                 ajustes=dict(trim_leading_missing=False, symmetric_averaging=False,
+                                              clip_nonnegative=False, snap_integers=False))),
             inicio_utc=evaluacion["inicio_utc"].isoformat(), fin_utc=evaluacion["fin_utc"].isoformat(),
             periodo_local=config["periodos"]["evaluacion"],
             estado_inicial={b["id"]: b["inicial_wh"] for b in config["baterias"]},
             semillas={"demanda": config["semilla"], "escenarios": config["semilla_escenarios"]},
             control={c: config[c] for c in ("horizonte", "replanificacion", "escenarios", "lambda_terminal")},
             tiempos=dict(evaluacion["tiempos"], carga_chronos_s=carga_s, carga_timesfm_s=carga_timesfm_s,
-                         total_s=duracion),
+                         carga_t0_s=carga_t0_s, total_s=duracion),
             verificaciones=dict(fisica=evaluacion["fisica"], pareo=evaluacion["pareo"],
                                 reproducibilidad=reproducibilidad),
             metricas=resumen["metricas"], diferencias_diarias=resumen["diferencias_diarias"],
