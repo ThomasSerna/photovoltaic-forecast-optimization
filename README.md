@@ -11,6 +11,8 @@ y controlador MPC heurístico.
 borrador del artículo ([docs/articulo.md](docs/articulo.md)).
 **Análisis adicional C (rama `t05-timesfm`):** TimesFM 3.0 zero-shot con el mismo
 protocolo, verificado en CPU (ver «Análisis adicional: alternativa C»).
+**Análisis adicional D (rama `t05-t0gamma`, que incluye C):** t0-gamma zero-shot con
+el mismo protocolo, verificado en CPU (ver «Análisis adicional: alternativa D»).
 El comando de preparación descrito abajo todavía **no ejecuta el simulador**
 ni los pronósticos. El alcance matemático y el experimento se explican en
 [docs/IDEA.md](docs/IDEA.md).
@@ -96,6 +98,22 @@ se distribuyen bajo la [TimesFM Non-Commercial License v1.0](https://huggingface
 que solo permite uso no comercial ni productivo; aquí se usan con fines académicos y
 el repositorio no los redistribuye. El código de `timesfm` es Apache-2.0. Detalles y
 supuestos en IDEA §5.
+
+**Alternativa D (análisis adicional, rama `t05-t0gamma`).** El mismo extra instala
+`tfc-t0[torch]==0.6.0`. En `uv.lock` solo añade `tfc-t0`, `jaxtyping`,
+`rotary-embedding-torch` y `wadler-lindig`; no cambia torch, transformers,
+huggingface-hub, numpy, Chronos ni TimesFM. Para cargar t0-gamma y pronosticar:
+
+- `cargar_t0(opciones["revision_t0"], opciones["dispositivo"])` carga
+  `theforecastingcompany/t0-gamma` en CPU/FP32, fijado al commit
+  `e08aee083778f1f32da4974c0a34276776a35c52`, con `strict=True` y en modo evaluación.
+- `pronosticar_t0(modelo, …)` tiene la misma firma y salida que
+  `pronosticar_chronos`. Pide los 21 cuantiles nativos, elige 0.1–0.9 sin interpolar
+  y desactiva los cuatro ajustes internos de `predict`; la GHI histórica es entera y
+  `snap_integers` redondearía los crudos.
+
+La primera carga descarga 1,02 GB de pesos. **Licencia:** el código y los pesos de
+t0-gamma son Apache-2.0. Detalles y supuestos en IDEA §5.
 
 La interfaz compartida con beta es una tabla de cuantiles en W/m²:
 índice horario `inicio_utc` con zona UTC y columnas numéricas de probabilidad.
@@ -386,8 +404,9 @@ la heurística de T03 con la GHI realizada de cada hora. Tiene información perf
 de la hora en curso: no es una alternativa admisible y no entra en la diferencia B − A.
 
 En la rama `t05-timesfm` el mismo comando carga también TimesFM 3.0 y añade la
-alternativa C como análisis adicional (sección siguiente). Con solo A y B, las
-columnas y el formato de la tabla A/B son los de esta sección.
+alternativa C como análisis adicional. En la rama `t05-t0gamma` carga además
+t0-gamma y añade la alternativa D. Ambas se describen en las secciones siguientes.
+Con solo A y B, las columnas y el formato de la tabla A/B son los de esta sección.
 
 El comando verifica:
 
@@ -403,11 +422,11 @@ No modifica la configuración. Exige una carpeta nueva y publica `resumen.json` 
 final como marcador de éxito. Exporta:
 
 - `tabla_ab.csv` y `tabla_ab.md`: A, B, B − A y referencia por indicador; con C,
-  además `timesfm` y `diferencia_c_menos_a`.
+  además `timesfm` y `diferencia_c_menos_a`, y con D, `t0` y `diferencia_d_menos_a`.
 - `horas.csv`, `cargas.csv`, `baterias.csv` y `decisiones.csv`, con columna `politica`.
 - `pronosticos.csv`: crudos y corregidos por origen y anticipación, frente a ERA5.
 - `diario.csv`: J, S_pond y energía no atendida por día local, y ΔJ de cada
-  alternativa frente a A (`delta_J_chronos`, `delta_J_timesfm`).
+  alternativa frente a A (`delta_J_chronos`, `delta_J_timesfm`, `delta_J_t0`).
 - `figuras/`: `irradiancia.png`, `demanda_atendida.png`, `baterias.png` y
   `diferencias_diarias.png`.
 - `resumen.json`: verificaciones, métricas, reservas elegidas, semillas, bloques,
@@ -539,6 +558,78 @@ descarga, de 1.32 GB, tardó 17.4 s en esta red, y una prueba de humo aislada mi
 Son resultados exploratorios, con una sola realización y sin pruebas de significancia.
 No hay cifras publicadas de TimesFM para este caso con las que contrastarlos.
 
+## Análisis adicional: alternativa D (t0-gamma)
+
+Es una adaptación del proyecto en la rama `t05-t0gamma`, que parte de `t05-timesfm` e
+incluye C; la pregunta principal sigue siendo A frente a B. D cambia solo el
+pronosticador por `theforecastingcompany/t0-gamma`: zero-shot, en CPU/FP32, con la
+misma historia de 336 h y los mismos cuantiles 0.1–0.9, corrección común, escenarios,
+MPC y λ_T=0. Como C, hereda λ_T de T04 sin recalibrarlo. Versión, revisión, banderas
+y licencia están en IDEA §5. El comando de T05 es el mismo y exporta las cuatro ramas.
+
+**Ensayo CPU verificado el 21 de octubre de 2026** (`results/t05_t0gamma/`, excluido
+de Git y regenerable). Con D presente, A, B, C y la referencia coinciden **exactamente**
+con `results/t05_timesfm/`: los mismos CSV por política, los mismos J, S_pond, métricas,
+reservas, ΔJ, semillas, bloques y hashes de contexto, y las mismas filas de la tabla
+sin tiempos.
+
+| Indicador | A — beta | B — Chronos-2 | C — TimesFM 3.0 | D — t0-gamma | D − A |
+|---|---:|---:|---:|---:|---:|
+| MAE diurno (W/m²) | 66.33 | 64.20 | 64.90 | 62.72 | −3.61 |
+| RMSE diurno (W/m²) | 101.17 | 98.92 | 98.38 | 98.98 | −2.19 |
+| Pinball diurno (W/m²) | 25.94 | 25.13 | 25.59 | 24.49 | −1.44 |
+| Cobertura 0.1–0.9 diurna (nominal 80 %) | 76.98 % | 80.95 % | 83.31 % | 83.31 % | +6.33 p.p. |
+| MAE diurno, primeras 6 h (W/m²) | 66.97 | 60.77 | 61.59 | 60.40 | −6.57 |
+| J realizado (Wh·p) | 285714.424364 | 286220.023421 | 285418.068982 | 285477.943030 | −236.481334 |
+| S_pond | 0.9312263476 | 0.9328742419 | 0.9302604393 | 0.9304555863 | −0.0007707614 |
+| Energía no atendida (Wh) | 16418.24 (11.06 %) | 16352.93 (11.02 %) | 16360.97 (11.02 %) | 16403.11 (11.05 %) | −15.14 |
+| Servicio crítico (p ≥ 3) | 100 % | 100 % | 100 % | 100 % | 0 |
+| Horas con demanda atendida por completo | 93.01 % | 93.01 % | 93.15 % | 93.15 % | +0.15 p.p. |
+| Compromisos incumplidos (carga·h) | 29 | 35 | 20 | 19 | −10 |
+| Solicitudes no comprometidas (carga·h) | 191 | 194 | 195 | 198 | +7 |
+
+**Pronóstico.** D tiene el menor MAE y el menor pinball de las cuatro ramas, también
+en las primeras 6 h. Su RMSE queda cerca del de Chronos-2 y por encima del de TimesFM,
+y su banda 0.1–0.9 cubre algo más que el nivel nominal, igual que C. Sus crudos no
+traen filas cruzadas (305 en B y 483 en C), pero sí 6629 valores negativos (1616 en B y
+6410 en C), en 2652 filas. La corrección común cambia su MAE diurno de 62.74 a 62.72 W/m².
+
+**Servicio.** D queda −0.08 % frente a A, −742.08 Wh·p frente a B y +59.87 Wh·p
+frente a C. La diferencia con A se concentra en los cuatro días de B y C, más el 3 de
+marzo:
+
+| Día | D − A (Wh·p) |
+|---|---:|
+| 3 de marzo | −62.36 |
+| 4 de marzo | −225.27 |
+| 5 de marzo | −395.31 |
+| 6 de marzo | +366.46 |
+| 17 de marzo | +80.00 |
+
+Los otros 23 días son idénticos. D eligió ρ=0 en los 112 orígenes. Es la rama con menos
+compromisos incumplidos, pero también la que deja más solicitudes sin comprometer. Es
+el mejor pronosticador por MAE y pinball, pero el mayor J lo obtiene B: se refuerza la
+lectura de T05, un pronóstico mejor no garantiza más servicio.
+
+**Verificación.** Cero violaciones físicas: error máximo del bus 5.7e-14 Wh y de
+batería 2.3e-13 Wh. Hubo cero filtraciones, ningún aviso de valores no finitos en
+stderr y la repetición de las primeras 48 h fue exacta. Una segunda ejecución completa
+(`results/t05_t0gamma_repeticion/`) produjo CSV de resultados idénticos byte a byte; en
+`tabla_ab.csv` solo cambian los tiempos medidos.
+
+**Costo computacional.** Las dos ejecuciones completas duraron 645.6 y 583.8 s, frente
+a 426.3 s con tres ramas; el tiempo de todas las ramas varía con la carga de la máquina,
+así que D se compara dentro de cada ejecución. La rama D tardó 138.5 y 127.5 s, en el
+rango de A, B y C (120–148 s): el MPC domina. Su inferencia media fue de 0.050 s por
+origen, unas 1.4 veces la de Chronos-2 (0.035–0.037 s) y una cuarta parte de la de
+TimesFM 3.0 (0.202 s). La carga con pesos en caché tomó 1.0 s; la descarga única, de
+1.02 GB, no se midió por separado. Una prueba de humo aislada midió 1.33 GB de RSS tras
+cargar D, frente a 1.51 GB con C.
+
+Son resultados exploratorios, con una sola realización y sin pruebas de significancia.
+No hay cifras publicadas de t0-gamma para este caso con las que contrastarlos, y su
+corpus de preentrenamiento no está documentado.
+
 ## Configuración y regeneración
 
 `scripts/configuracion.json` es la configuración única. Las rutas de `datos`
@@ -628,7 +719,8 @@ con tolerancia de 0,001 Wh y capacidad por solicitud con holgura de 1e-6 Wh por
 redondeo. T03 verifica los balances físicos horarios y T04 verifica el ensayo
 pareado de calibración en CPU. T05 verifica la evaluación reservada (sección anterior).
 Los pesos de TimesFM 3.0 (alternativa C) tienen licencia no comercial: el proyecto los
-usa con fines académicos, los descarga al ejecutar y no los redistribuye.
+usa con fines académicos, los descarga al ejecutar y no los redistribuye. El código y
+los pesos de t0-gamma (alternativa D) son Apache-2.0; también se descargan al ejecutar.
 Consultar `docs/datos.md` para datos/unidades y `docs/IDEA.md` para el protocolo
 experimental y las adaptaciones al [paper de Acuna et al.](https://doi.org/10.3390/en14102789).
 

@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (19 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). En la rama `t05-timesfm`, **análisis adicional C con TimesFM 3.0** verificado en CPU (§§5 y 7).
+**Estado (21 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). En la rama `t05-timesfm`, **análisis adicional C con TimesFM 3.0** verificado en CPU; en la rama `t05-t0gamma`, que incluye C, **análisis adicional D con t0-gamma** verificado en CPU (§§5 y 7).
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -23,6 +23,8 @@ Objetivos específicos: (1) generar pronósticos solares comparables; (2) implem
 **Hipótesis por evaluar, no resultado anticipado:** Chronos-2 puede reducir el error de irradiancia y mejorar la demanda ponderada atendida; también puede empatar o rendir peor. Un error predictivo menor no garantiza mejores decisiones.
 
 **Análisis adicional C — TimesFM 3.0** (rama `t05-timesfm`): es una adaptación del proyecto y no forma parte de la pregunta principal. Cambia únicamente el pronosticador por el checkpoint oficial `google/timesfm-3.0-pytorch`, sin entrenamiento, con el protocolo de T05 (§§5 y 7). Cada alternativa se compara con A; la pregunta y la hipótesis anteriores no cambian.
+
+**Análisis adicional D — t0-gamma** (rama `t05-t0gamma`): también es una adaptación del proyecto, con el mismo alcance que C. Cambia únicamente el pronosticador por el checkpoint oficial `theforecastingcompany/t0-gamma`, sin entrenamiento, con el protocolo de T05 (§§5 y 7). Se compara con A, como B y C.
 
 ## 2. Fuentes y fidelidad matemática
 
@@ -150,6 +152,17 @@ Se descartó el ajuste libre de cuatro parámetros tras un piloto de desarrollo 
 - **Preentrenamiento.** Según la ficha: GiftEvalPretrain sin fev-bench, Wikipedia Pageviews, Google Trends y datos sintéticos. No se afirma que no haya visto series semejantes.
 - **Lo que hereda sin recalibrar.** λ_T se calibró en T04 solo con A y B, y C lo hereda sin recalibrar.
 
+**D — t0-gamma (análisis adicional):**
+- **Modelo y versión.** Checkpoint oficial `theforecastingcompany/t0-gamma`, sin entrenamiento ni ajuste. Se fija `tfc-t0[torch]==0.6.0` (módulo `t0`) y la revisión `e08aee083778f1f32da4974c0a34276776a35c52` (clave `pronosticos.revision_t0`), único commit del repositorio. La ficha exige `tfc-t0>=0.6.0`, y el README de `tfc-t0` advierte que las versiones anteriores cargan t0-gamma sin error, pero con otras convenciones, y degradan el pronóstico sin avisar. `uv.lock` solo añade `tfc-t0`, `jaxtyping`, `rotary-embedding-torch` y `wadler-lindig`; torch, transformers, huggingface-hub, numpy, Chronos y TimesFM no cambian.
+- **Pesos.** FP32: `config.json` no pide precisión mixta (`"dtype": null`), así que no hay autocast. El `state_dict` tiene 255 614 293 valores, como indica la ficha: 255 614 272 parámetros y el búfer `head.quantile_levels`, de 21 valores. `model.safetensors` ocupa 1,02 GB y su sha256 coincide con el LFS, `1603e255629be22ea45518b502f16c55d06821c7090a1a851673e779e9c245a6`. La carga usa `strict=True`, de modo que una clave faltante produce error, y deja el modelo en modo evaluación (dropout desactivado).
+- **Licencia.** Código y pesos **Apache-2.0** (`LICENSE` y `NOTICE` del repositorio de Hugging Face y de `tfc-t0`). A diferencia de C, no hay restricción de uso no comercial.
+- **Entradas y salida.** Recibe la misma historia de 336 h, univariada y sin covariables, que A, B y C; se carga una vez en CPU. Su salida nativa son 21 cuantiles: 0.01, 0.05, 0.10, …, 0.95 y 0.99, que incluyen exactamente 0.1–0.9. Se piden los 21 niveles y se eligen los configurados por nivel. Con un nivel nativo, la interpolación interna usa peso 0; una prueba de humo confirmó que pedir directamente 0.1–0.9 da valores idénticos.
+- **Detalles internos.** El parche mide 32: el contexto se rellena a 352 h con 16 posiciones enmascaradas. H=24 se decodifica en una sola pasada, recortado de un parche de 32, sin despliegue autorregresivo.
+- **Banderas.** `predict` ofrece cuatro ajustes, desactivados por defecto, aunque la documentación recomienda activarlos: recorte de faltantes iniciales (`trim_leading_missing`), promediado simétrico (`symmetric_averaging`), recorte a no negativos (`clip_nonnegative`) y redondeo a enteros (`snap_integers`). Se pasan los cuatro en `False` de forma explícita. **La GHI histórica es entera** (17 544 de 17 544 valores), así que `snap_integers` redondearía los crudos y `clip_nonnegative` los recortaría; el promediado simétrico se omitiría igualmente, porque el mínimo de la historia es 0. En la prueba de humo, activarlos cambió los crudos hasta en 2.87 W/m². Así, la única corrección es la común, como en A, B y C.
+- **Posprocesado no desactivable.** La biblioteca sustituye por 0 cualquier valor no finito y lo registra con un aviso. La comprobación de finitud no puede detectarlo; por eso se revisó el stderr de las ejecuciones, y no hubo avisos.
+- **Preentrenamiento.** La ficha y el blog no documentan el corpus; remiten al informe técnico (arXiv 2609.24559). No se afirma que no haya visto series semejantes.
+- **Lo que hereda sin recalibrar.** D también hereda λ_T=0 de T04 sin recalibrar.
+
 Los proveedores entregan **los mismos cuantiles para los mismos tiempos**. Se aplica una corrección común: reordenar cruces, eliminar negativos y poner a cero intervalos completamente nocturnos según amanecer/ocaso calculados con Astral a partir de fecha y coordenadas. Se conservan los intervalos que cruzan esas fronteras y los pronósticos crudos; se reportan correcciones y rangos. Se supone horizonte sin obstáculos y observador a nivel del suelo. **No se impone techo superior artificial de GHI**: 1000 W/m² es referencia STC, no una cota física universal. La mediana sirve como pronóstico puntual. Esta política es una adaptación del proyecto, común a todas las ramas.
 
 **Escenarios temporalmente coherentes:** `generar_escenarios(cuantiles, historico, origen, configuracion)` toma bloques históricos completos de 24 horas, alineados con la hora local del origen dentro de las mismas 336 horas admisibles. Calcula rangos entre bloques **por columna del horizonte**, con empates promedio y \(U=(r-0.5)/M\). Muestrea 50 bloques con reemplazo, mediante una semilla que combina `semilla_escenarios` y la hora UTC del origen; el orden de ejecución A/B no afecta al muestreo. Interpola esos mismos rangos sobre los cuantiles corregidos de cada proveedor y prolonga los cuantiles extremos fuera de 0.1–0.9. Devuelve matrices N×H `escenarios` y `rangos`, fechas UTC `bloques` y `semilla`. Empates y colas truncadas son aproximaciones: no reproducen exactamente las marginales ni garantizan calibración conjunta.
@@ -262,6 +275,49 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
   - Los resultados son exploratorios y no se aplican pruebas de significancia.
   - El encaje de la licencia no comercial en un repositorio público es una interpretación del proyecto, no asesoría legal: no se redistribuyen pesos y los pronósticos son *Outputs*.
 
+**Análisis adicional D — t0-gamma** (rama `t05-t0gamma`, `results/t05_t0gamma/resumen.json`, regenerable):
+- **Protocolo.** El mismo de C: mismo comando y periodo, 112 orígenes por rama, estado inicial configurado, λ_T=0 heredado de T04 y bloques, rangos y semillas comunes. Cada alternativa se compara con A.
+- **Regresión.** La ejecución con D reproduce **exactamente** A, B, C y la referencia de `results/t05_timesfm`. Son idénticos, como texto, los CSV de cargas, horas, baterías, decisiones y pronósticos por política; J, S_pond, métricas, reservas, ΔJ, semillas, bloques, hashes de contexto, correcciones y pareo; y las filas de la tabla sin tiempos.
+- **Pronóstico** (1438 pares diurnos, cuantiles corregidos; A / B / C / D):
+
+  | Indicador | A | B | C | D |
+  |---|---:|---:|---:|---:|
+  | MAE (W/m²) | 66.33 | 64.20 | 64.90 | 62.72 |
+  | RMSE (W/m²) | 101.17 | 98.92 | 98.38 | 98.98 |
+  | Pinball (W/m²) | 25.94 | 25.13 | 25.59 | 24.49 |
+  | Cobertura 0.1–0.9 (nominal 80 %) | 76.98 % | 80.95 % | 83.31 % | 83.31 % |
+  | MAE en las seis primeras horas (W/m²) | 66.97 | 60.77 | 61.59 | 60.40 |
+
+  D tiene el menor MAE y el menor pinball de las cuatro ramas, también en las seis primeras horas; su RMSE queda cerca del de B y por encima del de C. Su intervalo cubre por encima del nivel nominal, igual que C. Sus crudos no traen filas cruzadas (0, frente a 305 de B y 483 de C), pero sí 6629 cuantiles negativos (1616 en B y 6410 en C), en 2652 filas por rama. La corrección común cambia su MAE diurno de 62.74 a 62.72 W/m².
+- **Servicio.** \(J_D=285477.943\) Wh·p: \(J_D-J_A=-236.481\) Wh·p (−0.08 %), \(J_D-J_B=-742.080\) Wh·p y \(J_D-J_C=+59.874\) Wh·p. \(S_{\mathrm{pond}}=0.9304555863\), y la energía no atendida es de 16403.11 Wh (11.05 %). La diferencia con A se concentra en los cuatro días de B y C, más el 3 de marzo:
+
+  | Día | D − A (Wh·p) |
+  |---|---:|
+  | 3 de marzo | −62.36 |
+  | 4 de marzo | −225.27 |
+  | 5 de marzo | −395.31 |
+  | 6 de marzo | +366.46 |
+  | 17 de marzo | +80.00 |
+
+  Los otros 23 días son idénticos; la media diaria es −8.45 Wh·p y la mediana, 0. El 4 de marzo D y C obtienen el mismo J, y el 17 de marzo B, C y D ganan lo mismo frente a A.
+- **Cargas y decisiones.** El servicio crítico es del 100 % y el nivel de servicio horario, del 93.15 %, como en C. D eligió ρ=0 en los 112 orígenes. Es la rama con menos compromisos incumplidos (19, frente a 29 de A, 35 de B y 20 de C), pero también la que deja más solicitudes sin comprometer (198, frente a 191, 194 y 195). Atendió el 71.8 % de las cargas de prioridad 1 y el 91.3 % de las de prioridad 2, entre los valores de A y C.
+- **Lectura.** D es el mejor pronosticador de las cuatro ramas por MAE y pinball, pero no obtiene el mayor J: lo obtiene B. Se refuerza la lectura de T05: un error predictivo menor no garantiza más servicio, y el signo de la diferencia depende de pocos días nublados.
+- **Verificación.**
+  - **Consistencia.** Cero violaciones físicas: error del bus ≤ 5.7e−14 Wh y de batería ≤ 2.3e−13 Wh, cotas redondeadas hacia arriba. Cero filtraciones y ningún aviso de valores no finitos en stderr.
+  - **Reproducibilidad.** La repetición interna de las primeras 48 h fue exacta: 30 h, 5 orígenes, 0 Wh y 0 W/m² de diferencia. Una segunda ejecución completa (`results/t05_t0gamma_repeticion`) produjo CSV de resultados idénticos byte a byte; en `tabla_ab.csv` solo cambian los tiempos medidos.
+- **Costo computacional en CPU/FP32.**
+  - La ejecución completa duró 645.6 s y su repetición, 583.8 s, frente a 426.3 s de la ejecución con C. Las ramas A, B y C también tardaron distinto que en esa ejecución (A: 141.1 y 120.4 s, frente a 122.3 s), porque el tiempo depende de la carga de la máquina. Por eso el costo de D se compara dentro de cada ejecución.
+  - La rama D tardó 138.5 y 127.5 s, frente a 141.1 y 120.4 s de A, 135.7 y 123.7 s de B y 146.7 y 147.9 s de C: el MPC domina el tiempo de cada rama.
+  - La inferencia media de D fue de 0.050 s por origen en las dos ejecuciones (máximo 0.065 s y total 5.6 s en la primera). La de B fue de 0.035–0.037 s y la de C, de 0.202 s: D tarda unas 1.4 veces lo que Chronos-2 y una cuarta parte de lo que TimesFM 3.0.
+  - La carga con pesos en caché tomó 1.0 s. La descarga única de 1.02 GB no se midió por separado.
+  - Una prueba de humo aislada midió 1.33 GB de RSS tras cargar D, frente a 1.51 GB con C.
+- **Sin verificar.**
+  - No hay una cifra publicada de t0-gamma con la que contrastar este caso.
+  - λ_T no se recalibró con D.
+  - El corpus de preentrenamiento no está documentado, así que no se puede descartar que incluyera datos semejantes.
+  - La sustitución interna de no finitos por 0 solo se detecta en el registro de avisos, no en los cuantiles.
+  - Los resultados son exploratorios y no se aplican pruebas de significancia.
+
 **Correspondencia con los indicadores del artículo (§4.2).** El artículo mide el *service level* (porcentaje de réplicas en que se cubre la demanda) y el *missing of fulfilment* (porcentaje medio no cubierto). T05 calcula sus análogos sobre la trayectoria realizada: la proporción de horas con demanda atendida por completo y la fracción media no atendida en las horas con déficit. La diferencia está en la base: horas de una sola realización, no réplicas. Los bloques y rangos comunes de A y B cumplen el papel de los números aleatorios comunes que usa el artículo (§3.1) para comparar soluciones. No se compara numéricamente con el caso Volcanes, porque los datos, el sistema y la demanda difieren.
 
 **Indicadores principales** (calculados sobre ejecución realizada):
@@ -286,7 +342,7 @@ Conservar `data/`, la ingesta/generación existente de `src/` y sus pruebas actu
 
 ```text
 src/
-├── pronosticos.py   # Chronos-2, TimesFM 3.0 (C), beta y correcciones comunes
+├── pronosticos.py   # Chronos-2, TimesFM 3.0 (C), t0-gamma (D), beta y correcciones comunes
 ├── simulador.py     # FV, baterías, despacho y cargas
 ├── controlador.py   # escenarios y MPC compartido
 └── experimento.py   # T05: evaluación pareada, métricas, tabla y gráficos
@@ -302,6 +358,7 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 | **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completada y verificada en CPU** |
 | **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
 | **T05-C — TimesFM 3.0** (análisis adicional, rama `t05-timesfm`) | Mismo protocolo con un tercer pronosticador; regresión exacta de A/B | **Completado y verificado en CPU** |
+| **T05-D — t0-gamma** (análisis adicional, rama `t05-t0gamma`) | Mismo protocolo con un cuarto pronosticador; regresión exacta de A/B/C | **Completado y verificado en CPU** |
 
 Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 presentará el experimento final.
 
@@ -313,4 +370,4 @@ Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen
 
 **Fuera del alcance:** medición en vivo, instalación física, diseño de electrónica de potencia, optimización económica, entrenamiento de Chronos-2, API, dashboard, pronóstico de demanda, comparación masiva de algoritmos, garantía de operación segura en hardware y reproducción numérica exacta del caso Volcanes.
 
-**Fuentes:** Acuña et al. (2021), [DOI:10.3390/en14102789](https://doi.org/10.3390/en14102789); *Lineamientos del proyecto final* (Angélica M. González, 2026); [Amazon Chronos-2, Hugging Face](https://huggingface.co/amazon/chronos-2); [TimesFM 3.0, Hugging Face](https://huggingface.co/google/timesfm-3.0-pytorch) y su [licencia](https://huggingface.co/google/timesfm-3.0-pytorch/blob/main/LICENSE); [repositorio google-research/timesfm](https://github.com/google-research/timesfm). Los supuestos y decisiones experimentales de este documento son **propuesta de implementación**, no hallazgos de esas fuentes.
+**Fuentes:** Acuña et al. (2021), [DOI:10.3390/en14102789](https://doi.org/10.3390/en14102789); *Lineamientos del proyecto final* (Angélica M. González, 2026); [Amazon Chronos-2, Hugging Face](https://huggingface.co/amazon/chronos-2); [TimesFM 3.0, Hugging Face](https://huggingface.co/google/timesfm-3.0-pytorch) y su [licencia](https://huggingface.co/google/timesfm-3.0-pytorch/blob/main/LICENSE); [repositorio google-research/timesfm](https://github.com/google-research/timesfm); [t0-gamma, Hugging Face](https://huggingface.co/theforecastingcompany/t0-gamma), el [repositorio theforecastingcompany/tfc-t0](https://github.com/theforecastingcompany/tfc-t0) y la entrada [«Introducing t0-gamma»](https://theforecastingcompany.com/blog/t0-gamma/). Los supuestos y decisiones experimentales de este documento son **propuesta de implementación**, no hallazgos de esas fuentes.
