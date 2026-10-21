@@ -27,6 +27,7 @@
     "cuantiles": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
     "revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
     "revision_timesfm": "43046b85ec22d584a13f8098c2ed39c889e129c2",
+    "revision_t0": "e08aee083778f1f32da4974c0a34276776a35c52",
     "dispositivo": "cpu"
   },
   "replanificacion": 6,

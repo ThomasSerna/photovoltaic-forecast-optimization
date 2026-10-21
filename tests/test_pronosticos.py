@@ -11,14 +11,18 @@ import pandas as pd
 import pytest
 
 from src.pronosticos import (
-    cargar_chronos, cargar_timesfm, corregir_cuantiles, mascara_noche, pronosticar_chronos,
-    pronosticar_timesfm,
+    cargar_chronos, cargar_t0, cargar_timesfm, corregir_cuantiles, mascara_noche, pronosticar_chronos,
+    pronosticar_t0, pronosticar_timesfm,
 )
 
 
 ORIGEN = pd.Timestamp("2025-01-06T00:00:00-05:00")
 CUANTILES = (0.1, 0.5, 0.9)
 NIVELES_TIMESFM = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]  # config.json de la revisión fijada
+NIVELES_T0 = (0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,  # config.json de la revisión fijada
+              0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99)
+SIN_AJUSTES_T0 = dict(trim_leading_missing=False, symmetric_averaging=False, clip_nonnegative=False,
+                      snap_integers=False)
 
 
 class PipelineFalso:
@@ -49,6 +53,39 @@ class TimesFMFalso:
         valores = np.arange(horizon * 9, dtype=np.float32).reshape(horizon, 9) + 100
         valores[0] = [5., -1., 3., 2., 1., 0., 9., 8., 7.]
         return SimpleNamespace(quantiles=valores if self.salida is None else self.salida)
+
+
+class TensorFalso:
+    """Imita la conversión de un tensor de torch: detach().cpu().numpy()."""
+
+    def __init__(self, valores):
+        self.valores = valores
+
+    def detach(self):
+        return self
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        return self.valores
+
+
+class T0Falso:
+    """Salida nativa (1, H, 21); la primera fila cruza cuantiles y tiene un negativo."""
+
+    def __init__(self, salida=None, niveles=None):
+        self.config = SimpleNamespace(quantile_levels=NIVELES_T0)
+        self.llamadas = []
+        self.salida = salida
+        self.niveles = niveles
+
+    def predict(self, model_input, horizon, quantile_levels, **kwargs):
+        self.llamadas.append((np.asarray(model_input).copy(), horizon, tuple(quantile_levels), kwargs))
+        valores = np.arange(horizon * 21, dtype=np.float32).reshape(1, horizon, 21) + 100
+        valores[0, 0, [2, 10, 18]] = [5., -1., 3.]  # niveles 0.1, 0.5 y 0.9
+        return SimpleNamespace(quantiles=TensorFalso(valores) if self.salida is None else self.salida,
+                               quantile_levels=tuple(quantile_levels) if self.niveles is None else self.niveles)
 
 
 @pytest.fixture
@@ -264,7 +301,80 @@ def test_cargar_timesfm_usa_checkpoint_oficial_revision_y_dispositivo(monkeypatc
                          dict(device="cpu", revision=revision, per_core_batch_size=1))]
 
 
-@pytest.mark.parametrize("cargar", [cargar_chronos, cargar_timesfm])
+def test_t0_ventana_niveles_nativos_y_crudos_sin_corregir(historico):
+    modelo = T0Falso()
+    original = historico.copy(deep=True)
+    resultado = pronosticar_t0(modelo, historico, ORIGEN, contexto=4, horizonte=3, cuantiles=CUANTILES)
+    pd.testing.assert_index_equal(
+        resultado.index, pd.date_range(ORIGEN.tz_convert("UTC"), periods=3, freq="h", name="inicio_utc"),
+    )
+    assert list(resultado.columns) == list(CUANTILES)
+    # Columnas 2, 10 y 18 de la salida nativa; la fila cruzada y el negativo llegan intactos.
+    np.testing.assert_array_equal(resultado.to_numpy(), [[5., -1., 3.], [123., 131., 139.], [144., 152., 160.]])
+    contexto, horizonte, niveles, opciones = modelo.llamadas[0]
+    np.testing.assert_array_equal(contexto, [20., 30., 40., 50.])
+    assert contexto.dtype == np.float32 and horizonte == 3
+    assert niveles == NIVELES_T0 and opciones == SIN_AJUSTES_T0
+    pd.testing.assert_frame_equal(historico, original)
+
+
+def test_t0_futuro_y_reserva_no_afectan_prediccion(historico):
+    modelo = T0Falso()
+    esperado = pronosticar_t0(modelo, historico, ORIGEN, contexto=4, horizonte=3, cuantiles=CUANTILES)
+    alterado = historico.copy(deep=True)
+    alterado.loc[alterado["inicio_utc"] >= ORIGEN, "ghi_w_m2"] = 999999.
+    obtenido = pronosticar_t0(modelo, alterado, ORIGEN, contexto=4, horizonte=3, cuantiles=CUANTILES)
+    pd.testing.assert_frame_equal(obtenido, esperado)
+    np.testing.assert_array_equal(modelo.llamadas[0][0], modelo.llamadas[1][0])
+
+
+@pytest.mark.parametrize("parametros", [
+    {"cuantiles": (0.02, 0.5, 0.98)}, {"cuantiles": (0.12, 0.5, 0.9)}, {"cuantiles": (0.1, 0.9)},
+    {"contexto": 13}, {"horizonte": 0},
+])
+def test_t0_rechaza_niveles_ausentes_y_contexto_incompleto(historico, parametros):
+    modelo = T0Falso()
+    with pytest.raises(ValueError):
+        pronosticar_t0(modelo, historico, ORIGEN, **{"contexto": 4, "horizonte": 3,
+                                                     "cuantiles": CUANTILES, **parametros})
+    assert not modelo.llamadas
+
+
+@pytest.mark.parametrize("salida,niveles", [
+    (np.zeros((1, 3, 20)), None), (np.zeros((3, 21)), None), (np.zeros((1, 2, 21)), None),
+    (np.zeros((2, 3, 21)), None), (np.full((1, 3, 21), float("nan")), None),
+    (np.full((1, 3, 21), float("inf")), None), (None, (0.02, *NIVELES_T0[1:])),
+])
+def test_t0_rechaza_salida_invalida_del_modelo(historico, salida, niveles):
+    modelo = T0Falso(salida, niveles)
+    with pytest.raises(ValueError, match="t0-gamma"):
+        pronosticar_t0(modelo, historico, ORIGEN, contexto=4, horizonte=3, cuantiles=CUANTILES)
+
+
+def test_cargar_t0_usa_checkpoint_oficial_revision_y_modo_evaluacion(monkeypatch):
+    llamadas = []
+
+    class Cargado:
+        evaluado = False
+
+        def eval(self):
+            self.evaluado = True
+            return self
+
+    modelo = Cargado()
+
+    def cargar(nombre, **kwargs):
+        llamadas.append((nombre, kwargs))
+        return modelo
+
+    monkeypatch.setitem(sys.modules, "t0", SimpleNamespace(T0Forecaster=SimpleNamespace(from_pretrained=cargar)))
+    revision = "c" * 40
+    assert cargar_t0(revision, dispositivo="cpu") is modelo and modelo.evaluado
+    assert llamadas == [("theforecastingcompany/t0-gamma",
+                         dict(revision=revision, map_location="cpu", strict=True))]
+
+
+@pytest.mark.parametrize("cargar", [cargar_chronos, cargar_timesfm, cargar_t0])
 @pytest.mark.parametrize("revision,dispositivo", [
     ("a" * 39, "cpu"), ("A" * 40, "cpu"), (None, "cpu"), ("a" * 40, "mps"),
 ])

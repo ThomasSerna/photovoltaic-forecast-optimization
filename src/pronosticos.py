@@ -1,4 +1,4 @@
-"""Chronos-2, TimesFM 3.0, referencia beta y correcciones comunes de GHI media horaria (W/m²).
+"""Chronos-2, TimesFM 3.0, t0-gamma, referencia beta y correcciones comunes de GHI media horaria (W/m²).
 
 Adaptación de IDEA.md §5; no implementa el despacho ni las ecuaciones (1)–(10)
 de Acuña et al. (2021). Cada modelo se carga una vez y se recibe explícitamente.
@@ -16,6 +16,7 @@ from .datos import historial_admisible
 
 CHECKPOINT = "amazon/chronos-2"
 CHECKPOINT_TIMESFM = "google/timesfm-3.0-pytorch"  # pesos: TimesFM Non-Commercial License v1.0
+CHECKPOINT_T0 = "theforecastingcompany/t0-gamma"  # código y pesos: Apache-2.0
 CUANTILES = tuple(i / 10 for i in range(1, 10))
 
 
@@ -60,6 +61,19 @@ def cargar_timesfm(revision, dispositivo="cpu"):
     return TimesFM3Forecaster.from_pretrained(
         CHECKPOINT_TIMESFM, device=dispositivo, revision=revision, per_core_batch_size=1,
     )
+
+
+def cargar_t0(revision, dispositivo="cpu"):
+    """Carga t0-gamma (alternativa D) fijado a un commit, en FP32 y sin entrenamiento.
+
+    Su config.json no pide precisión mixta, así que corre en FP32. strict=True exige
+    todas las claves del checkpoint; eval() desactiva el dropout en la inferencia.
+    """
+    _validar_carga(revision, dispositivo)
+    from t0 import T0Forecaster
+
+    modelo = T0Forecaster.from_pretrained(CHECKPOINT_T0, revision=revision, map_location=dispositivo, strict=True)
+    return modelo.eval()
 
 
 def contexto_admisible(historico, origen, contexto):
@@ -128,6 +142,35 @@ def pronosticar_timesfm(modelo, historico, origen, *, contexto=336, horizonte=24
         raise ValueError("TimesFM 3.0: cuantiles no finitos o forma distinta de (H, Q)")
     indice = pd.date_range(pd.Timestamp(origen).tz_convert("UTC"), periods=horizonte, freq="h", name="inicio_utc")
     return pd.DataFrame(valores[:, [niveles.index(q) for q in cuantiles]], index=indice, columns=cuantiles)
+
+
+def pronosticar_t0(modelo, historico, origen, *, contexto=336, horizonte=24, cuantiles=CUANTILES):
+    """Cuantiles crudos H×Q de t0-gamma, con la misma interfaz que Chronos-2.
+
+    Univariado y sin covariables. Se piden los niveles nativos del checkpoint y se eligen
+    los configurados, sin interpolar. Se desactivan el recorte de faltantes iniciales, el
+    promediado simétrico, el recorte a no negativos y el redondeo a enteros (la GHI
+    histórica es entera): la corrección común se aplica después, igual que en A, B y C.
+    """
+    numero(horizonte, "horizonte", minimo=1, maximo=1024, entero=True)
+    validar_cuantiles(cuantiles)
+    niveles = [float(q) for q in modelo.config.quantile_levels]
+    if any(q not in niveles for q in cuantiles):
+        raise ValueError(f"t0-gamma: solo emite los cuantiles {niveles}; no se interpolan otros")
+    ventana = contexto_admisible(historico, origen, contexto)
+    salida = modelo.predict(
+        ventana["ghi_w_m2"].to_numpy(dtype=np.float32), horizon=horizonte, quantile_levels=niveles,
+        trim_leading_missing=False, symmetric_averaging=False, clip_nonnegative=False, snap_integers=False,
+    )
+    valores = salida.quantiles
+    if hasattr(valores, "detach"):
+        valores = valores.detach().cpu().numpy()
+    valores = np.asarray(valores, dtype=float)
+    if ([float(q) for q in salida.quantile_levels] != niveles or valores.shape != (1, horizonte, len(niveles))
+            or not np.isfinite(valores).all()):
+        raise ValueError("t0-gamma: cuantiles no finitos, niveles distintos o forma distinta de (1, H, Q)")
+    indice = pd.date_range(pd.Timestamp(origen).tz_convert("UTC"), periods=horizonte, freq="h", name="inicio_utc")
+    return pd.DataFrame(valores[0][:, [niveles.index(q) for q in cuantiles]], index=indice, columns=cuantiles)
 
 
 def pronosticar_beta(historico, origen, *, contexto=336, horizonte=24, cuantiles=CUANTILES,
@@ -206,7 +249,7 @@ def mascara_noche(indice, configuracion):
 
 
 def corregir_cuantiles(tabla, configuracion):
-    """Reordenamiento, no negatividad y noche, comunes a beta, Chronos y TimesFM.
+    """Reordenamiento, no negatividad y noche, comunes a beta, Chronos, TimesFM y t0.
 
     No recorta máximos: 1000 W/m² es referencia STC, no un techo de irradiancia.
     Devuelve una copia y los conteos de las correcciones aplicadas.

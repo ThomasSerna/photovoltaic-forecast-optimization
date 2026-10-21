@@ -13,6 +13,7 @@ dependencies = ["pandas>=2.2", "tzdata"]
 pronosticos = [
     "chronos-forecasting==2.3.2",
     "timesfm[torch]==3.0.2",
+    "tfc-t0[torch]==0.6.0",
     "torch>=2.2,<3",
     "numpy>=1.26",
     "scipy>=1.14,<2",
