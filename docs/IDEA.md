@@ -244,11 +244,11 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 
 | Tarea / issue de GitHub | Resultado mínimo verificable | Estado |
 |---|---|---|
-| **T01 — Datos** ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)) | CSV, demanda semisintética, configuración y validación reproducibles | **Completada** |
-| **T02 — Chronos-2** ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)) | Pronosticar 24 h a partir de historia válida y graficar frente a irradiancia real | **Completada** |
-| **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)) | Física corregida por batería, heurística y restricciones verificables | **Completada** |
-| **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completada y verificada en CPU** |
-| **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
+| **T01 — Datos** ([#1](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/1)) | CSV, demanda semisintética, configuración y validación reproducibles | **Completada** |
+| **T02 — Chronos-2** ([#2](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/2)) | Pronosticar 24 h a partir de historia válida y graficar frente a irradiancia real | **Completada** |
+| **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/3)) | Física corregida por batería, heurística y restricciones verificables | **Completada** |
+| **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completada y verificada en CPU** |
+| **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
 
 Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 presentará el experimento final.
 

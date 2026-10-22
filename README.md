@@ -15,11 +15,11 @@ ni los pronósticos. El alcance matemático y el experimento se explican en
 
 ## Tareas del proyecto
 
-- **T01 — Preparación de datos:** completada ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)).
-- **T02 — Chronos-2:** completada y verificada en CPU ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)).
-- **T03 — Simulador energético y heurística:** completada ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)).
-- **T04 — Referencia beta y MPC compartido:** completada y verificada en CPU ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)).
-- **T05 — Comparación y resultados:** completada y verificada en CPU ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)).
+- **T01 — Preparación de datos:** completada ([#1](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/1)).
+- **T02 — Chronos-2:** completada y verificada en CPU ([#2](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/2)).
+- **T03 — Simulador energético y heurística:** completada ([#3](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/3)).
+- **T04 — Referencia beta y MPC compartido:** completada y verificada en CPU ([#4](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/4)).
+- **T05 — Comparación y resultados:** completada y verificada en CPU ([#5](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/5)).
 
 El objetivo es simplificar el código y la arquitectura, **sin simplificar
 las ecuaciones ni las restricciones físicas del modelo**.
