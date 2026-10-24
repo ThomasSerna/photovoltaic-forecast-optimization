@@ -1,0 +1,59 @@
+{
+  "url": "https://archive-api.open-meteo.com/v1/archive?latitude=5.5610705&longitude=-75.8092448&start_date=2022-01-01&end_date=2023-01-01&hourly=shortwave_radiation&models=era5&timezone=GMT&timeformat=unixtime",
+  "consultado_utc": "2026-10-24T15:49:08.440749+00:00",
+  "inicio_intervalo": "2022-01-01T00:00:00-05:00",
+  "fin_exclusivo": "2023-01-01T00:00:00-05:00",
+  "documentacion": "https://open-meteo.com/en/docs/historical-weather-api",
+  "fuente": "Open-Meteo",
+  "modelo": "ERA5",
+  "variable_api": "shortwave_radiation",
+  "unidad": "W/m²",
+  "coordenadas_solicitadas": {
+    "latitud": 5.5610705,
+    "longitud": -75.8092448
+  },
+  "celda_devuelta": {
+    "latitude": 5.5,
+    "longitude": -75.75
+  },
+  "elevation_devuelta_m": 2253.0,
+  "zona_horaria_calendario": "America/Bogota",
+  "periodos": {
+    "historial_previo": {
+      "inicio": "2015-01-01T00:00:00-05:00",
+      "fin": "2025-01-06T00:00:00-05:00"
+    },
+    "desarrollo": {
+      "inicio": "2025-01-06T00:00:00-05:00",
+      "fin": "2025-03-03T00:00:00-05:00"
+    },
+    "evaluacion": {
+      "inicio": "2025-03-03T00:00:00-05:00",
+      "fin": "2025-03-31T00:00:00-05:00"
+    },
+    "reserva_no_usada": {
+      "inicio": "2025-03-31T00:00:00-05:00",
+      "fin": "2026-01-01T00:00:00-05:00"
+    }
+  },
+  "conversion_temporal": "sello Unix UTC = fin de la hora precedente; inicio = sello - 1 h; aplicada una sola vez",
+  "disponibilidad": "available_at = fin_intervalo; supuesto idealizado, no disponibilidad operativa de ERA5",
+  "procedencia": "Nueva adquisición; no reconstruye la respuesta cruda original de los CSV publicados",
+  "configuracion_sha256": "76d906e40f91896326f8780e5f719af83952ef0d5fa8a827074df0feed142d98",
+  "conteos": {
+    "historico": 8760,
+    "simulacion": 0
+  },
+  "sha256_originales": {
+    "consulta.json": "3951f2bdec883dd63eb42db5817a403d63e7a7b331df7a3bdc66f56caf92abbb",
+    "respuesta.json": "b76fe965e10c961cc1e4af19333bb3ee3df45a5920bbfcb3858106a468ca9c2f",
+    "irradiancia_historica.csv": "268887922db39a4001f6cb2c8592cfa76641838a8e115b6ad839877eb1a56ff4",
+    "irradiancia_simulacion.csv": "a7ba7f3b6ee74b4e4488816d80fdeb781ad6ea547fbbb98c44f1aa46a1ed516f"
+  },
+  "sha256": {
+    "consulta.json": "07b2ae8b3c7081703024f394abfebf8f6e171ae917c0bd11dc5d8953a12688f1",
+    "respuesta.json.gz": "534e729231beac775a21e3088f1f431cf331f5696c61278bb6f290994a5e8ef2",
+    "irradiancia_historica.csv.gz": "6cf59cf851431370f18a2e2c151383f1c7d435cda0760387c97a7c06fd2b5f25"
+  },
+  "normalizacion_sha256": "JSON/CSV: CRLF a LF antes de SHA256; gzip: bytes exactos; originales: bytes exactos"
+}

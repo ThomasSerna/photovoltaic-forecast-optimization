@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "fuente": "Open-Meteo/ERA5; reanálisis, no sensor local",
+  "coordenadas": {
+    "latitud": 5.5610705,
+    "longitud": -75.8092448
+  },
+  "unidad": "W/m²",
+  "resolucion_h": 1,
+  "zona_horaria": "America/Bogota",
+  "conversion_temporal": "CSV ya alineado al inicio de intervalo; no desplazar nuevamente",
+  "disponibilidad": "fin_intervalo_idealizada, no disponibilidad operativa de ERA5",
+  "periodos": {
+    "entrenamiento": {
+      "inicio": "2015-01-01T00:00:00-05:00",
+      "fin": "2025-01-01T00:00:00-05:00"
+    },
+    "validacion": {
+      "inicio": "2025-01-06T00:00:00-05:00",
+      "fin": "2025-03-03T00:00:00-05:00"
+    },
+    "evaluacion": {
+      "inicio": "2025-03-03T00:00:00-05:00",
+      "fin": "2025-03-31T00:00:00-05:00"
+    },
+    "evaluacion_nueva": {
+      "inicio": "2025-04-01T00:00:00-05:00",
+      "fin": "2026-01-01T00:00:00-05:00"
+    }
+  },
+  "horas": 96432,
+  "horas_por_periodo": {
+    "entrenamiento": 87672,
+    "validacion": 1344,
+    "evaluacion": 672,
+    "evaluacion_nueva": 6600
+  },
+  "base": {
+    "configuracion_sha256": "0838ab78b4a78825c7117686ca090eadd980aac0a3c090516f112165a650379c",
+    "historico_sha256": "e0a2907bfa5ca9f7663d324c99b1f4138833ab0712978c1a53398edb6b99b919"
+  },
+  "sha256": {
+    "2015/consulta.json": "d2df66d39008a0ece264f879b4091e51b524257f5c31850ae0536f32dba42d8f",
+    "2015/respuesta.json.gz": "790e6c90a91dc208068b7126ada1be768940fc606497b9ce6e9c1dea40c65218",
+    "2015/irradiancia_historica.csv.gz": "913a477d6449d1d3ea08f4e848853c0e9fa9af170263cbb5d78332c5e415049f",
+    "2015/metadatos.json": "f07f47cf57e48a9037b0e3709eb9780b6c3d7a54b9a61ccade9959c0fa0e65ca",
+    "2016/consulta.json": "a10634a0bf62cced687129b90c36557eaa2a5d3e6ec78611c6b57f4df20f12b8",
+    "2016/respuesta.json.gz": "a7c7ae23c3e3b5567783e90336447112b3be2b526ae2e0f922c6f87c6e65e856",
+    "2016/irradiancia_historica.csv.gz": "b16ec887ed9f99284415023bdeaf640c5175f0cde45e0207493570f2dec44cf5",
+    "2016/metadatos.json": "80631147dd136dfd7fb6d7edb4214976a477a581d50edaeae3d74d05784873d9",
+    "2017/consulta.json": "99eb8c1d8a32ec0f07a312c1c2ef3b3c192a0bba72fa34d228d30834cbb5d99e",
+    "2017/respuesta.json.gz": "18edd049838fd531b1004bc83c3128f3dcb455fe4ce40e876cdd62e0b2ff3153",
+    "2017/irradiancia_historica.csv.gz": "78e6642381274d00101eb8906163b72c021caf295339aa3cf4bb097df52ceffe",
+    "2017/metadatos.json": "a99432b417e6bf9583c328e0530fe18f328d1212d99ad9b5c58c7b81e2b31985",
+    "2018/consulta.json": "7cda2f7c5f70b3fac47b6ba83cda1154b87cccb37e6fa2b40766524d9c8c599c",
+    "2018/respuesta.json.gz": "417b3ee921128cf07509c068b6892e10765a4b4563813ba200c948a6ff6fd325",
+    "2018/irradiancia_historica.csv.gz": "3391f6e1cef153df700282a5104d6a1ec87aa3d78c95d5cfbc76f701af0a2624",
+    "2018/metadatos.json": "9ee2b434b01a8bccd785141d0b0d6197110dde263d67c9e7a2e80090a831df46",
+    "2019/consulta.json": "f6b544424f08493efc917f348ed82a105b1d367516bca4387456a6f545b9e71d",
+    "2019/respuesta.json.gz": "5424b324cd56b92d1bd5b9013d58adc123dbc9c0ab966cfe07b9f5f1e4a23fcd",
+    "2019/irradiancia_historica.csv.gz": "dc1d1bb8ec40be984c785ce44eac5d7a0f57689752506f24c08d185d309c415f",
+    "2019/metadatos.json": "b750303804336349f67a81ef191da86f3f8ec97712ac891aad73eae07db52708",
+    "2020/consulta.json": "b23cf89f45aa3d931ac3daae65bdfd0a468d4fbf35b03b12193e78ad8122c5a8",
+    "2020/respuesta.json.gz": "46f0fcbd9c88c4e7bc95e419e1bdc62fff5c4007312c35dfa84d39e2751ca603",
+    "2020/irradiancia_historica.csv.gz": "bcdf73087830ea456528f3c1718a10e2fb66b28a92946a789eda4d1a13b7d591",
+    "2020/metadatos.json": "911fd907985b697e14ce1fd6443b8e59fb28b1a80a2f287f1ad5062da3e9ad40",
+    "2021/consulta.json": "ce49d01959bae3257c455f270c3714075581cbfa40606fb3dda8b1ae01e70ccc",
+    "2021/respuesta.json.gz": "59096133230f1251fc31164bda1d2849feaf07cf2b4f347d0981a0a993704058",
+    "2021/irradiancia_historica.csv.gz": "a79e2ecfd8d0fb62016dbe7891102857be6551a277ca689bf08d1fd39ccedff6",
+    "2021/metadatos.json": "82073e8f4359dc09251ab0162b3d56b547071abf4491aa8d4e24f1ac8995e56d",
+    "2022/consulta.json": "07b2ae8b3c7081703024f394abfebf8f6e171ae917c0bd11dc5d8953a12688f1",
+    "2022/respuesta.json.gz": "534e729231beac775a21e3088f1f431cf331f5696c61278bb6f290994a5e8ef2",
+    "2022/irradiancia_historica.csv.gz": "6cf59cf851431370f18a2e2c151383f1c7d435cda0760387c97a7c06fd2b5f25",
+    "2022/metadatos.json": "d2126026959bee9cda727f0ec7b3056898c6f4b592139ee4852f4e9d4cf250c4",
+    "2023/consulta.json": "fc0bc0dfcf7645e049e442987c20243ec3565eb17f367ba56b316744c6606608",
+    "2023/respuesta.json.gz": "5702dab90b53b4458e02178bc65a08aa654aedd78fdc87425161890fd8517b12",
+    "2023/irradiancia_historica.csv.gz": "c82eadf3c65d021a7223bdcdf085d8604ac51a88bd287e708d3917e0ab55ab3b",
+    "2023/metadatos.json": "a5b813f33967d7f32a19af5ce2e527b505a9ff2df49c3b986c95d2bb0a15ba8a"
+  },
+  "notas": [
+    "Entrenamiento termina antes de 2025; validación no actualiza pesos.",
+    "Marzo ya fue publicado: contraste exploratorio.",
+    "Abril–diciembre es holdout temporal nuevo para pronóstico, sin demanda energética sintética.",
+    "No se garantiza ausencia de datos semejantes en el preentrenamiento de Chronos-2."
+  ],
+  "normalizacion_sha256": "JSON/CSV: CRLF a LF antes de SHA256; gzip: bytes exactos; originales: bytes exactos"
+}

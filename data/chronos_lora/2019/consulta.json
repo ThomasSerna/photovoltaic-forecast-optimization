@@ -1,0 +1,6 @@
+{
+  "url": "https://archive-api.open-meteo.com/v1/archive?latitude=5.5610705&longitude=-75.8092448&start_date=2019-01-01&end_date=2020-01-01&hourly=shortwave_radiation&models=era5&timezone=GMT&timeformat=unixtime",
+  "consultado_utc": "2026-10-24T15:49:00.804898+00:00",
+  "inicio_intervalo": "2019-01-01T00:00:00-05:00",
+  "fin_exclusivo": "2020-01-01T00:00:00-05:00"
+}
