@@ -1,0 +1,16 @@
+{
+  "config_base": "configuracion.json",
+  "datos": "../data/chronos_lora",
+  "salida_entrenamiento": "../results/chronos_lora/entrenamiento",
+  "salida_comparacion": "../results/chronos_lora/comparacion",
+  "entrenamiento": {
+    "semilla": 20261024,
+    "pasos": 1000,
+    "batch_size": 8,
+    "acumulacion": 4,
+    "tasa_aprendizaje": 0.00001,
+    "rango": 8,
+    "alpha": 16,
+    "evaluar_cada": 100
+  }
+}

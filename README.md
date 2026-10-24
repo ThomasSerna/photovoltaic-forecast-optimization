@@ -141,6 +141,30 @@ de **839,09 MiB**, en CPU AMD64/FP32 con 16 procesadores lógicos. Son cifras de
 ensayo corto de esta máquina, no rendimiento general ni comparación con beta.
 Los artefactos quedan en `results/chronos_t02/`, excluidos de Git y regenerables.
 
+## Extensión: ajuste LoRA en otra máquina con GPU
+
+La rama `experiment/chronos-2-fine-tunning-lora` prepara el ajuste de Chronos-2
+para **Windows con RTX 5070**, sin entrenar en el PC de desarrollo. Incluye los
+datos adicionales de ERA5 de 2015–2023 y reutiliza el snapshot publicado: diez
+años para entrenar, validación en enero–febrero de 2025, comparación de pronóstico
+y energía en marzo y prueba adicional de pronóstico en abril–diciembre.
+
+En la máquina con GPU, desde la raíz:
+
+```powershell
+uv sync --locked --extra entrenamiento
+uv run --locked --extra entrenamiento python -m src.ajuste_lora verificar
+uv run --locked --extra entrenamiento python -m src.ajuste_lora entrenar
+uv run --locked --extra entrenamiento python -m src.ajuste_lora comparar
+```
+
+Usar únicamente el extra `entrenamiento`: incluye pronósticos y PEFT y es
+excluyente con `pronosticos` para conservar el entorno actual de CPU. La
+[guía completa](docs/chronos_lora.md) incluye requisitos, prueba de dos pasos,
+configuración, recarga del adaptador y lectura de los informes. Los datos ya
+están preparados; no hace falta escribir código ni descargar meteorología.
+La compatibilidad y la mejora real quedan pendientes de ejecutar en la GPU.
+
 ## Simulador energético y heurística (T03)
 
 `simular(demanda, irradiancia, configuracion, *, estado_inicial=None,

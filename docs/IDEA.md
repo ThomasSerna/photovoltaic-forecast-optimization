@@ -258,6 +258,38 @@ Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen
 2. Tabla y visualizaciones de comparación beta frente a Chronos-2.
 3. Artículo del curso: resumen, introducción, literatura, método, resultados, discusión, conclusiones y referencias; más presentación oral. Según los lineamientos, la presentación final es el **4 o 5 de noviembre de 2026**.
 
-**Fuera del alcance:** medición en vivo, instalación física, diseño de electrónica de potencia, optimización económica, entrenamiento de Chronos-2, API, dashboard, pronóstico de demanda, comparación masiva de algoritmos, garantía de operación segura en hardware y reproducción numérica exacta del caso Volcanes.
+**Fuera del alcance del experimento original T01–T05:** medición en vivo, instalación física, diseño de electrónica de potencia, optimización económica, entrenamiento de Chronos-2, API, dashboard, pronóstico de demanda, comparación masiva de algoritmos, garantía de operación segura en hardware y reproducción numérica exacta del caso Volcanes. La extensión LoRA siguiente amplía únicamente el alcance de entrenamiento y su comparación.
+
+## 9. Extensión experimental: Chronos-2 con LoRA
+
+La rama `experiment/chronos-2-fine-tunning-lora` prepara un ajuste de pesos
+mediante adaptadores LoRA, separado del experimento zero-shot ya publicado.
+No modifica las ecuaciones de §4, la demanda, el controlador, sus parámetros ni
+la calibración de T04. La hipótesis adicional es si el ajuste mejora el
+pronóstico y, por separado, el servicio energético frente al mismo modelo base;
+se admiten mejoras, empates o deterioros.
+
+Se incorporan adquisiciones trazables de Open-Meteo/ERA5 de 2015–2023 en el
+mismo sitio, sin sustituir los CSV originales. El entrenamiento usa
+`[2015-01-01, 2025-01-01)`; la validación y selección por menor pérdida usan
+desarrollo `[2025-01-06, 2025-03-03)`. Todas las etiquetas quedan dentro de su
+partición. Se conserva C=336 h, H=24 h y paso de origen de 6 h; la validación
+contiene 221 ventanas C+H. Se fijan revisión base, versiones, semillas,
+hiperparámetros y hashes. Solo los parámetros LoRA se pueden entrenar.
+
+Marzo `[2025-03-03, 2025-03-31)` compara beta, Chronos-2 base y Chronos-2 LoRA
+con el mismo MPC y referencia reactiva. Se añaden diferencias LoRA−base de
+error, J, S_pond y energía no atendida. Sigue siendo un contraste exploratorio
+porque sus resultados ya fueron inspeccionados. La reserva
+`[2025-04-01, 2026-01-01)` añade exclusivamente evaluación predictiva de base y
+LoRA, sin cambiar pesos ni seleccionar checkpoints a partir de ella; no se
+genera demanda artificial adicional. Sus observaciones pasadas son contexto
+admisible para el origen siguiente.
+
+El código se prepara y prueba con dobles en CPU; el entrenamiento se ejecuta
+solo en otra máquina Windows con una GPU NVIDIA compatible, inicialmente RTX
+5070. No hay todavía un resultado entrenado ni una mejora validada. La
+[guía de ejecución](chronos_lora.md) detalla los comandos, la prueba breve,
+las guardas de CUDA/PEFT, el guardado y recarga, las métricas y los límites.
 
 **Fuentes:** Acuña et al. (2021), [DOI:10.3390/en14102789](https://doi.org/10.3390/en14102789); *Lineamientos del proyecto final* (Angélica M. González, 2026); [Amazon Chronos-2, Hugging Face](https://huggingface.co/amazon/chronos-2). Los supuestos y decisiones experimentales de este documento son **propuesta de implementación**, no hallazgos de esas fuentes.

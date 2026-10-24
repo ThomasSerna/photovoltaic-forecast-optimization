@@ -3,6 +3,7 @@
 import json
 import math
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -185,6 +186,52 @@ def test_reproducibilidad_detecta_un_pronosticador_inestable():
         experimento.verificar_reproducibilidad(caso, pronosticadores, evaluacion)
 
 
+def test_lora_compara_tercera_politica_sin_cambiar_la_comparacion_ab():
+    caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
+    pronosticadores = {"beta": _constante(0.), "chronos": _constante(0.), "chronos_lora": _constante(1000.)}
+    evaluacion = experimento.evaluar(caso, pronosticadores)
+    assert tuple(evaluacion["registros"]) == ("beta", "chronos", "chronos_lora")
+    assert evaluacion["pareo"]["entradas_comunes"]
+    assert experimento.verificar_reproducibilidad(caso, pronosticadores, evaluacion)["coincide"]
+    resumen = experimento.resumir(caso, evaluacion)
+    assert resumen["diario"]["delta_J"].sum() == 0.
+    assert resumen["diario"]["delta_J_lora"].sum() == 1.
+    assert resumen["diferencias_diarias_lora"]["dias_lora_mayor"] == 1
+    tabla = experimento.tabla_lora(caso, evaluacion, resumen).set_index(["indicador", "unidad"])
+    assert tabla.loc[("J realizado", "Wh·p"), "chronos"] == 3.
+    assert tabla.loc[("J realizado", "Wh·p"), "chronos_lora"] == 4.
+    assert tabla.loc[("J realizado", "Wh·p"), "diferencia_lora_menos_base"] == 1.
+    assert set(resumen["pronosticos"]) == set(pronosticadores)
+    assert {r["proveedor"] for r in experimento._registros(evaluacion)} == set(pronosticadores)
+
+
+@pytest.mark.parametrize("alteracion", ["contexto", "escenarios"])
+def test_pareo_comprueba_tambien_lora(alteracion):
+    caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
+    evaluacion = experimento.evaluar(caso, {n: _constante(0.) for n in (*experimento.POLITICAS, "chronos_lora")})
+    if alteracion == "contexto":
+        evaluacion["registros"]["chronos_lora"][0]["contexto_sha256"] = "distinto"
+    else:
+        evaluacion["resultados"]["chronos_lora"]["pronosticos"][0]["semilla"] = [0, 0]
+    with pytest.raises(ValueError, match="pareo"):
+        experimento.verificar_pareo(evaluacion["resultados"], evaluacion["registros"])
+
+
+def test_instrumentacion_sincroniza_antes_y_despues_de_la_inferencia():
+    eventos = []
+
+    def pronosticar(historia, origen, horizonte):
+        eventos.append("inferencia")
+        return _cuantiles([0.] * horizonte, origen)
+
+    registro = []
+    envuelto = experimento._instrumentar(pronosticar, registro, 336,
+                                        sincronizar=lambda: eventos.append("sincronizar"))
+    envuelto(_historia(np.zeros(336)), ORIGEN, 2)
+    assert eventos == ["sincronizar", "inferencia", "sincronizar"]
+    assert len(registro) == 1 and registro[0]["inferencia_s"] >= 0
+
+
 @pytest.fixture
 def comando(tmp_path, monkeypatch):
     """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
@@ -226,6 +273,41 @@ def test_comando_exporta_tabla_graficas_y_registro_sin_tocar_entradas(comando):
     assert tabla.loc[("J realizado", "Wh·p"), "diferencia_b_menos_a"] == 1.
     assert "| Servicio | J realizado | Wh·p | 3.000 | 4.000 | 1.000 | 4.000 |" in (
         salida / "tabla_ab.md").read_text(encoding="utf-8")
+
+
+def test_comando_lora_exporta_modelos_y_diferencias_explicitas(comando, monkeypatch):
+    import importlib.metadata
+
+    config, salida, original = comando
+    adaptador = salida.parent / "adaptador"
+    adaptador.mkdir()
+    (adaptador / "adapter_config.json").write_text("{}", encoding="utf-8")
+    (adaptador / "adapter_model.safetensors").write_bytes(b"pesos dobles")
+    llamadas = []
+    pipeline_lora = object()
+
+    def cargar(ruta, revision, dispositivo):
+        llamadas.append((ruta, revision, dispositivo))
+        return pipeline_lora
+
+    monkeypatch.setitem(sys.modules, "src.ajuste_lora", SimpleNamespace(cargar_adaptador=cargar))
+    monkeypatch.setattr("src.controlador.proveedores", lambda caso, pipeline: {
+        "beta": _constante(0.), "chronos": _constante(1000. if pipeline is pipeline_lora else 0.)})
+    version = importlib.metadata.version
+    monkeypatch.setattr(importlib.metadata, "version", lambda nombre: "doble" if nombre == "peft" else version(nombre))
+    monkeypatch.setattr(sys, "argv", [*sys.argv, "--adaptador", str(adaptador), "--dispositivo", "cpu"])
+    experimento.main()
+    assert llamadas == [(adaptador, "a" * 40, "cpu")]
+    assert config.read_bytes() == original
+    informe = json.loads((salida / "resumen.json").read_text(encoding="utf-8"))
+    assert set(informe["metricas"]) == {"beta", "chronos", "chronos_lora", "reactiva"}
+    assert informe["diferencias_diarias_lora"]["dias_lora_mayor"] == 1
+    assert set(informe["adaptador"]["sha256"]) == {"adapter_config.json", "adapter_model.safetensors"}
+    assert "Chronos-2 base | Chronos-2 LoRA | LoRA − base" in (salida / "tabla_lora.md").read_text(encoding="utf-8")
+    tabla = pd.read_csv(salida / "tabla_lora.csv").set_index(["indicador", "unidad"])
+    assert tabla.loc[("J realizado", "Wh·p"), "diferencia_lora_menos_base"] == 1.
+    assert set(pd.read_csv(salida / "pronosticos.csv")["proveedor"]) == {"beta", "chronos", "chronos_lora"}
+    assert (salida / "figuras" / "diferencias_diarias_lora.png").stat().st_size > 0
 
 
 @pytest.mark.parametrize("fallo", ["salida_existente", "codigo"])
