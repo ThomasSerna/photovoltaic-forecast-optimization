@@ -150,13 +150,17 @@ def entrenamiento_doble(monkeypatch, tmp_path):
     torch = entorno_falso(monkeypatch)
     torch.cuda.max_memory_allocated.return_value = 123456
     torch.equal.side_effect = np.array_equal
+    torch.backends.fp32_precision = "ieee"
+    extraer = Mock(return_value="modelo sin autocast")
+    monkeypatch.setitem(sys.modules, "accelerate.utils", SimpleNamespace(extract_model_from_parallel=extraer))
     cargar_tensores = Mock(side_effect=lambda ruta: {"lora_A": np.array([1., 2.])})
     monkeypatch.setitem(sys.modules, "safetensors.torch", SimpleNamespace(load_file=cargar_tensores))
     semilla = Mock()
     monkeypatch.setitem(sys.modules, "transformers", SimpleNamespace(set_seed=semilla))
-    afinado, recargado = object(), object()
+    afinado, recargado = SimpleNamespace(model="modelo con autocast BF16"), object()
 
     def ajustar(**kwargs):
+        torch.backends.fp32_precision = "tf32"  # como transformers con tf32=True
         guardar_adaptador(kwargs["output_dir"] / "finetuned-ckpt", modulo, revision)
         mejor = kwargs["output_dir"] / f"checkpoint-{kwargs['num_steps']}"
         mejor.mkdir()
@@ -178,7 +182,7 @@ def entrenamiento_doble(monkeypatch, tmp_path):
                            validacion=validacion, ventanas=ventanas, semilla=semilla, pipeline=pipeline,
                            cargar_base=cargar_base, recargar=recargar, pronosticar=pronosticar,
                            cargar_tensores=cargar_tensores, snapshot=snapshot, tmp_path=tmp_path,
-                           revision=revision)
+                           revision=revision, torch=torch, extraer=extraer)
 
 
 def test_entrenar_doble_lora_guardado_recarga_y_trazabilidad(entrenamiento_doble):
@@ -242,6 +246,20 @@ def test_prueba_corta_exige_salida_propia(entrenamiento_doble):
         doble.modulo.entrenar(doble.tmp_path / "config.json", pasos=2)
     doble.pipeline.fit.assert_not_called()
     assert not (doble.tmp_path / "entrenamiento").exists()
+
+
+def test_referencia_de_recarga_en_fp32_sin_autocast_ni_tf32(entrenamiento_doble):
+    doble = entrenamiento_doble
+    estados = []
+
+    def pronosticar(pipeline, *args, **kwargs):
+        estados.append((getattr(pipeline, "model", None), doble.torch.backends.fp32_precision))
+        return pd.DataFrame([[1., 2.]])
+
+    doble.pronosticar.side_effect = pronosticar
+    doble.modulo.entrenar(doble.tmp_path / "config.json", salida=doble.tmp_path / "fp32", pasos=2)
+    doble.extraer.assert_called_once_with("modelo con autocast BF16", keep_fp32_wrapper=False)
+    assert estados == [("modelo sin autocast", "ieee"), (None, "ieee")]
 
 
 def test_recarga_inconsistente_no_publica_resumen(entrenamiento_doble):

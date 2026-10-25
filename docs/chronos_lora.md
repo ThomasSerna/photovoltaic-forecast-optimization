@@ -146,6 +146,9 @@ Se exige una pérdida de validación finita, completar los pasos solicitados y q
 los tensores exportados coincidan con el mejor checkpoint. Después se recarga el
 adaptador desde disco y se contrasta su pronóstico con el anterior: `rtol=1e-4`,
 `atol=1e-3 W/m²`, admitiendo el redondeo al fusionar LoRA con el modelo base.
+Ambos pronósticos usan FP32: antes de contrastarlos se retira el autocast BF16 que
+accelerate deja en el modelo ajustado y se restaura `torch.backends.fp32_precision`,
+que transformers cambia a TF32. Sin ello difieren unos 3 W/m² sin que cambien los pesos.
 
 Las carpetas de resultados deben ser nuevas. Para repetir, usar `--salida` con
 otra ruta. Una salida sin resumen final está incompleta. No hay reanudación

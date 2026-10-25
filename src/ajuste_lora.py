@@ -160,6 +160,18 @@ def _verificar_mejor_checkpoint(registro, pasos, adaptador):
         raise RuntimeError("El adaptador final no contiene los pesos del mejor checkpoint de validación")
 
 
+def _quitar_precision_mixta(pipeline, torch, precision_fp32):
+    """Devuelve el modelo ajustado a FP32 para compararlo con la recarga, como en `comparar`.
+
+    accelerate deja forward envuelto en autocast BF16 y transformers fija TF32 global;
+    Chronos solo restaura los niveles cuda/cudnn, no torch.backends.fp32_precision.
+    """
+    from accelerate.utils import extract_model_from_parallel
+
+    pipeline.model = extract_model_from_parallel(pipeline.model, keep_fp32_wrapper=False)
+    torch.backends.fp32_precision = precision_fp32
+
+
 def entrenar(ruta_config=CONFIG, salida=None, pasos=None):
     """Entrena únicamente en GPU. Un resumen final acredita guardado y recarga correctos."""
     opciones = cargar_opciones(ruta_config)
@@ -190,6 +202,7 @@ def entrenar(ruta_config=CONFIG, salida=None, pasos=None):
     registro = {}
     set_seed(ajustes["semilla"])
     torch.cuda.reset_peak_memory_stats()
+    precision_fp32 = torch.backends.fp32_precision
     inicio = perf_counter()
     revision = caso.configuracion["pronosticos"]["revision"]
     pipeline = cargar_chronos(revision, "cuda")
@@ -210,6 +223,7 @@ def entrenar(ruta_config=CONFIG, salida=None, pasos=None):
     )
     torch.cuda.synchronize()
     entrenamiento_s = perf_counter() - inicio
+    _quitar_precision_mixta(afinado, torch, precision_fp32)
     memoria = int(torch.cuda.max_memory_allocated())
     adaptador = salida / "finetuned-ckpt"
     _config_adaptador(adaptador, revision)
