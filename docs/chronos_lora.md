@@ -19,6 +19,10 @@ descargado nuevos pesos ni ejecutado actualizaciones reales de un modelo.
 La instalación básica aislada también pasa: 269 pruebas aprobadas y 12
 omisiones por dependencias opcionales (`uv run --isolated --locked pytest -q`).
 
+Ejecución verificada el **25 de octubre de 2026** en una RTX 5070 Laptop de 8 GB
+con el commit `ce7b85d`: 361 pruebas aprobadas con el extra `entrenamiento`,
+entrenamiento completo y comparación. Las cifras y su lectura están en §5.
+
 ## 1. Datos incluidos y separación temporal
 
 El repositorio incluye **2015–2023** descargados de Open-Meteo/ERA5 en
@@ -212,3 +216,85 @@ semejantes en el preentrenamiento de Chronos-2. La demanda y el sistema son
 semisintéticos; estos resultados no acreditan beneficios reales en la escuela
 ni significancia estadística. No cambiar hiperparámetros mirando cualquiera de
 los tests y seguir llamándolos conjuntos reservados.
+
+## 5. Resultados verificados (25 de octubre de 2026)
+
+**Entorno.** RTX 5070 Laptop GPU de 8 GB (`sm_120`, controlador 621.01), Windows 11,
+Python 3.12.15, PyTorch `2.14.1+cu130` (CUDA 13.0), Chronos `2.3.2`, PEFT `0.21.2`,
+transformers `5.20.1` y accelerate `1.15.0`. Se usaron el commit `ce7b85d`, la
+configuración predeterminada de `scripts/configuracion_lora.json` y la semilla
+`20261024`. La primera prueba de 2 pasos falló en la comprobación de recarga
+(3,38 W/m²) por el autocast BF16 descrito en §3; con la corrección de ese commit,
+la diferencia bajó a 0,00024 W/m².
+
+**Entrenamiento** (`results/chronos_lora/entrenamiento/`, regenerable):
+
+- 1.000 pasos en 432 s (2,3 pasos/s y 74 series/s, con batch efectivo de 32).
+  VRAM máxima asignada: 1,42 GB, así que no hizo falta reducir `batch_size`.
+- Parámetros entrenables: 1.206.912 de 120.684.576 (1,0 %), todos `lora_`.
+- Pérdida de validación (`eval_loss` interna de Chronos; no está en W/m²):
+
+| Paso | 100 | 200 | 300 | 400 | 500 | **600** | 700 | 800 | 900 | 1.000 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `eval_loss` | 1,0732 | 1,0679 | 1,0623 | 1,0625 | 1,0575 | **1,0552** | 1,0585 | 1,0575 | 1,0570 | 1,0562 |
+
+  Se eligió `checkpoint-600`. Como referencia, la prueba de 2 pasos registró 1,0861.
+  La pérdida media de entrenamiento fue 1,1429.
+- La recarga desde disco difiere como máximo 0,00018 W/m², dentro de la tolerancia.
+  SHA-256 de `adapter_model.safetensors`:
+  `bcf90cd1b95c3ede6a68b5512cc2be8b205448ca885ff0f4ac0430d7e42f9b5e`.
+
+**Marzo** (`results/chronos_lora/comparacion/`; unos 8 min en CUDA y FP32; 28 días
+y 112 orígenes por política):
+
+| Indicador | Base | LoRA | LoRA − base |
+|---|---:|---:|---:|
+| MAE diurno (W/m²) | 64,20 | 63,41 | −0,80 (−1,2 %) |
+| RMSE diurno (W/m²) | 98,92 | 95,94 | −2,98 (−3,0 %) |
+| Pinball diurno (W/m²) | 25,13 | 24,79 | −0,33 (−1,3 %) |
+| Cobertura diurna 0,1–0,9 (nominal 80 %) | 80,95 % | 78,30 % | −2,64 p.p. |
+| MAE diurno, primeras 6 h de cada origen (W/m²) | 60,77 | 60,16 | −0,61 |
+| J (Wh·p) | 286.220,02 | 286.153,23 | −66,79 (−0,02 %) |
+| S_pond | 93,29 % | 93,27 % | −0,02 p.p. |
+| Energía no atendida (Wh) | 16.352,93 | 16.358,84 | +5,91 |
+| Compromisos incumplidos (carga·h) | 35 | 22 | −13 |
+| Solicitudes no comprometidas (carga·h) | 194 | 207 | +13 |
+
+- 25 de los 28 días son idénticos. LoRA − base vale −201,52 Wh·p el 4 de marzo,
+  +193,57 el 5 y −58,85 el 6: tres de los cuatro días en que base y beta ya
+  diferían en T05.
+- Frente a beta, LoRA suma +438,81 Wh·p (+0,15 %), algo menos que la base (+505,60).
+- LoRA es más conservador: compromete 13 carga·h menos e incumple 13 menos, con las
+  mismas 229 solicitudes desatendidas. Eligió ρ = 0,25 en un origen; la base, en dos.
+- El servicio crítico es del 100 % y el nivel de servicio horario, del 93,01 %, en
+  las tres políticas.
+- Verificaciones: cero violaciones físicas (error del bus ≤ 5,7·10⁻¹⁴ Wh y de batería
+  ≤ 2,3·10⁻¹³ Wh), cero filtraciones, entradas comunes en los 112 orígenes y
+  repetición exacta (30 h, 5 orígenes, 0 Wh). La base en GPU reproduce las cifras de
+  T05 en CPU: J = 286.220,02 Wh·p y MAE diurno de 64,20 W/m².
+- Inferencia media por origen: 0,070 s la base y 0,056 s LoRA.
+
+**Abril–diciembre** (1.097 orígenes por modelo, cuantiles corregidos, inferencia
+media de 0,025 s por origen en ambos):
+
+| Subconjunto | Métrica | Base | LoRA | LoRA − base |
+|---|---|---:|---:|---:|
+| Diurno | MAE (W/m²) | 74,09 | 71,70 | −2,39 (−3,2 %) |
+| Diurno | RMSE (W/m²) | 112,41 | 107,92 | −4,49 (−4,0 %) |
+| Diurno | Pinball (W/m²) | 28,38 | 27,58 | −0,79 (−2,8 %) |
+| Diurno | Cobertura 0,1–0,9 | 82,12 % | 77,96 % | −4,16 p.p. |
+| Diurno, primeras 6 h | MAE (W/m²) | 67,76 | 66,00 | −1,77 (−2,6 %) |
+| Diurno, primeras 6 h | Cobertura 0,1–0,9 | 79,84 % | 76,95 % | −2,89 p.p. |
+| Global | MAE (W/m²) | 41,74 | 40,40 | −1,35 (−3,2 %) |
+
+`tabla_reserva.csv` incluye también RMSE, pinball y cobertura globales y los
+cuantiles crudos.
+
+**Lectura.** LoRA reduce el error en los dos periodos, también en la reserva, que
+no intervino en la selección del checkpoint. A cambio, estrecha los intervalos: su
+cobertura diurna queda por debajo del nominal, mientras la de la base quedaba por
+encima. En servicio, el cambio es prácticamente nulo (−0,02 % de J, concentrado en
+tres días). Se repite la conclusión de T05: un pronóstico mejor no garantiza más
+servicio con este controlador. Hay una sola realización, la demanda es sintética y
+marzo ya estaba inspeccionado, así que los resultados son exploratorios y no se
+aplican pruebas de significancia.

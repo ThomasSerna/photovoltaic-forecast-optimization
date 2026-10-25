@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (19 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`).
+**Estado (19 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). En la rama `experiment/chronos-2-fine-tunning-lora`, **extensión LoRA entrenada y comparada en GPU** el 25 de octubre de 2026 (§10).
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -260,9 +260,9 @@ Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen
 
 **Fuera del alcance del experimento original T01–T05:** medición en vivo, instalación física, diseño de electrónica de potencia, optimización económica, entrenamiento de Chronos-2, API, dashboard, pronóstico de demanda, comparación masiva de algoritmos, garantía de operación segura en hardware y reproducción numérica exacta del caso Volcanes. La extensión LoRA siguiente amplía únicamente el alcance de entrenamiento y su comparación.
 
-## 9. Extensión experimental: Chronos-2 con LoRA
+## 10. Extensión experimental: Chronos-2 con LoRA
 
-La rama `experiment/chronos-2-fine-tunning-lora` prepara un ajuste de pesos
+La rama `experiment/chronos-2-fine-tunning-lora` añade un ajuste de pesos
 mediante adaptadores LoRA, separado del experimento zero-shot ya publicado.
 No modifica las ecuaciones de §4, la demanda, el controlador, sus parámetros ni
 la calibración de T04. La hipótesis adicional es si el ajuste mejora el
@@ -286,10 +286,30 @@ LoRA, sin cambiar pesos ni seleccionar checkpoints a partir de ella; no se
 genera demanda artificial adicional. Sus observaciones pasadas son contexto
 admisible para el origen siguiente.
 
-El código se prepara y prueba con dobles en CPU; el entrenamiento se ejecuta
-solo en otra máquina Windows con una GPU NVIDIA compatible, inicialmente RTX
-5070. No hay todavía un resultado entrenado ni una mejora validada. La
-[guía de ejecución](chronos_lora.md) detalla los comandos, la prueba breve,
-las guardas de CUDA/PEFT, el guardado y recarga, las métricas y los límites.
+El código se prueba con dobles en CPU; el entrenamiento exige una GPU NVIDIA
+compatible. Se ejecutó el 25 de octubre de 2026 en una RTX 5070 Laptop de 8 GB
+(commit `ce7b85d`, semilla `20261024`): 1000 pasos en 432 s, con 1.42 GB de VRAM
+máxima asignada. La validación eligió `checkpoint-600` (`eval_loss` 1.0552) y la
+recarga del adaptador difirió como máximo 0.00018 W/m². Resultados en
+`results/chronos_lora/`, regenerables:
+
+- **Pronóstico.** LoRA reduce el error frente a la base. En marzo, el MAE diurno baja
+  de 64.20 a 63.41 W/m² (−1.2 %). En la reserva de abril a diciembre, baja de 74.09
+  a 71.70 W/m² (−3.2 %), con RMSE −4.0 % y pinball −2.8 %. Sus intervalos son más
+  estrechos: la cobertura diurna 0.1–0.9 pasa de 80.95 % a 78.30 % en marzo y de
+  82.12 % a 77.96 % en la reserva (nominal 80 %).
+- **Servicio en marzo.** \(J_{\mathrm{LoRA}}-J_{\mathrm{base}}=-66.794\) Wh·p
+  (−0.02 %). 25 de 28 días son idénticos; las diferencias se concentran en el 4, 5
+  y 6 de marzo. Frente a beta, LoRA suma +438.805 Wh·p (+0.15 %). Incumple 22
+  compromisos frente a 35 de la base, pero deja sin comprometer 207 solicitudes
+  frente a 194.
+- **Consistencia.** Cero violaciones físicas, cero filtraciones y repetición exacta.
+  La base en GPU reproduce J y MAE de T05 en CPU.
+
+Se refuerza la lectura de T05: un error predictivo menor no se traduce en más
+servicio con este controlador. Marzo ya estaba inspeccionado, así que los
+resultados son exploratorios. La [guía de ejecución](chronos_lora.md) detalla los
+comandos, la prueba breve, las guardas de CUDA/PEFT, el guardado y recarga, las
+métricas, los límites y las cifras completas (§5).
 
 **Fuentes:** Acuña et al. (2021), [DOI:10.3390/en14102789](https://doi.org/10.3390/en14102789); *Lineamientos del proyecto final* (Angélica M. González, 2026); [Amazon Chronos-2, Hugging Face](https://huggingface.co/amazon/chronos-2). Los supuestos y decisiones experimentales de este documento son **propuesta de implementación**, no hallazgos de esas fuentes.

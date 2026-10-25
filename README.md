@@ -4,7 +4,7 @@ Este proyecto estudia cómo los pronósticos de irradiancia influyen en el servi
 de un sistema fotovoltaico aislado con baterías, en un caso semisintético del
 Centro Educativo Rural El Rayo, Támesis, Antioquia.
 
-Esta rama prepara el ajuste de Chronos-2 mediante adaptadores LoRA para comparar
+Esta rama ajusta Chronos-2 mediante adaptadores LoRA para comparar
 su pronóstico y el servicio energético con el modelo base y una referencia beta.
 El experimento adapta el trabajo de
 [Acuña et al. (2021)](https://doi.org/10.3390/en14102789); el ajuste LoRA y el
@@ -27,7 +27,21 @@ La metodología común se describe en [docs/IDEA.md](docs/IDEA.md).
 
 ## Resultados
 
-Aún no hay resultados.
+Entrenamiento y comparación del 25 de octubre de 2026 en una RTX 5070 Laptop de
+8 GB: 1.000 pasos en 7 min; la validación eligió el checkpoint del paso 600.
+
+| Indicador | Base | LoRA |
+|---|---:|---:|
+| MAE diurno de irradiancia, marzo (W/m²) | 64,20 | 63,41 |
+| MAE diurno de irradiancia, abril–diciembre (W/m²) | 74,09 | 71,70 |
+| Cobertura diurna 0,1–0,9, abril–diciembre (nominal: 80 %) | 82,12 % | 77,96 % |
+| Demanda atendida ponderada, J, marzo (Wh·p) | 286 220,02 | 286 153,23 |
+
+LoRA reduce el error del pronóstico (−3,2 % de MAE diurno en la reserva), pero
+estrecha los intervalos y no mejora el servicio: J cambia −0,02 % y 25 de los 28
+días de marzo son idénticos. No hubo violaciones físicas ni uso de información
+futura. La [guía de LoRA](docs/chronos_lora.md#5-resultados-verificados-25-de-octubre-de-2026)
+reúne las cifras completas y sus límites; los resultados son exploratorios.
 
 ## Ejecución
 
