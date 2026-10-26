@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (19 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). En la rama `experiment/seleccion-mochila`, **regla opcional de selección exacta (mochila)**, desactivada por defecto y evaluada en desarrollo y marzo (§§4.4 y 7).
+**Estado (19 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). En la rama `experiment/seleccion-mochila`, **regla opcional de selección exacta (mochila)**, desactivada por defecto y evaluada en desarrollo y marzo, y **diagnóstico con información perfecta** (oráculo y óptimo MILP) en marzo (§§4.4 y 7).
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -212,9 +212,29 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
 
 **Lectura del resultado.** Un pronóstico mejor no se traduce automáticamente en más servicio. Con calendario fijo (\(z\le x\)), una mediana pesimista deja cargas sin comprometer y una optimista compromete cargas que luego se desconectan: Chronos registró 35 compromisos incumplidos y beta, 29. El efecto neto depende de pocos días nublados. Estas cifras son exploratorias y no permiten afirmar significancia.
 
+**Diagnóstico con información perfecta** (rama `experiment/seleccion-mochila`; `uv run --locked --extra pronosticos python -m src.cotas --salida results/cotas_evaluacion`, `src/cotas.py`). Ambos procedimientos conocen la GHI realizada del periodo: miden el margen del controlador y **no** son alternativas admisibles ni entran en B − A.
+
+- **Oráculo.** Es el MPC de §6 con un pronóstico que devuelve la GHI realizada en todos los cuantiles. Se comprobó que la corrección común no cambia nada (0 W/m²) y que los 50 escenarios coinciden con la realidad (dispersión 0 W/m²).
+- **Óptimo.** Es un MILP del periodo completo con la física de §4: balance del bus, potencia nominal, dinámica y límites de cada batería, y un binario de modo por hora que impone la dirección del despacho de §4.4 (y, con ella, \(c_bd_b=0\)). Termina con al menos el mínimo, por batería, de la energía final de las políticas (1927.59 y 2400 Wh). Todo recorrido realizado cumple esas restricciones, así que \(J^*\) acota el J de todas las políticas. HiGHS (SciPy) lo resolvió en 58 s, con 2544 binarias y brecha relativa \(9.9\times10^{-8}\): \(J^*=291378.601\) y cota dual 291378.630 Wh·p. La verificación propia da error de bus ≤ \(5.3\times10^{-12}\) Wh y cero violaciones. Al re-simular su calendario con el despacho por identificador de T03 se obtiene J = 291298.601 (−80 Wh·p, un compromiso perdido por el orden de reparto entre baterías), y pasa la verificación física de §4.
+
+  | Política (marzo) | J (Wh·p) | \(S_{\mathrm{pond}}\) | No atendida (Wh) | \(J^*-J\) |
+  |---|---:|---:|---:|---:|
+  | Óptimo con información perfecta | 291378.601 | 94.97 % | 12104.0 | — |
+  | B — Chronos-2 | 286220.023 | 93.29 % | 16352.9 | 5158.577 (1.80 %) |
+  | A — beta | 285714.424 | 93.12 % | 16418.2 | 5664.176 (1.98 %) |
+  | MPC con oráculo | 285240.845 | 92.97 % | 16218.5 | 6137.756 (2.15 %) |
+  | Referencia reactiva | 285240.845 | 92.97 % | 16218.5 | 6137.756 (2.15 %) |
+
+- **Lectura.** Con información perfecta, el MPC obtiene **menos** J que con los pronósticos de A y B, y coincide exactamente con la referencia reactiva. Con λ_T = 0 y horizonte de 24 h no ve valor en guardar energía para el día siguiente, y las reservas no distinguen entre prioridades 1 y 2. Los pronósticos pesimistas actúan como una reserva implícita. B − A cubre solo el 9 % de la distancia de A al óptimo. La brecha \(J^*-J_B\) se reparte así:
+  - 2416.6 Wh·p (47 %) en la racha nublada del 3 al 6 de marzo: el óptimo cede 989.6 el día 3 para ganar 3028.5 el día 4, lo que exige anticipación de varios días;
+  - 2342.1 Wh·p (45 %) a las 10:00 de los otros 15 días lectivos, en horas limitadas por potencia y con independencia del pronóstico;
+  - 399.9 Wh·p (8 %) el 17 de marzo; los fines de semana no aportan brecha.
+
+  El desglose sale de `diario_cotas.csv` y `cargas_optimas.csv`. Es una sola realización exploratoria: se usó para diagnosticar, no para ajustar parámetros de A ni de B.
+
 **Análisis adicional: selección exacta (mochila)** (rama `experiment/seleccion-mochila`; regla de §4.4, adaptación del proyecto).
 
-- **Motivación.** Un diagnóstico exploratorio de marzo, fuera del repositorio, comparó el MPC con un óptimo mensual con información perfecta (MILP con la física de §4). Mostró que cerca de la mitad de la distancia al óptimo se pierde a las 10:00 de los días lectivos: con 2000 W, la regla de prioridad enciende la licuadora (p=2, 600 W) y deja fuera seis ventiladores y un televisor, que suman más \(\sum p_kD_k\). Como la regla salió de mirar marzo, se decide con desarrollo y marzo solo confirma.
+- **Motivación.** El diagnóstico anterior atribuye el 45 % de la brecha a las 10:00 de los días lectivos. Con 2000 W, la regla de prioridad enciende la licuadora (p=2, 600 W) y deja fuera seis ventiladores y un televisor, que suman más \(\sum p_kD_k\); en esos días, el óptimo sacrifica la licuadora (−3844.1 Wh·p) y gana con los ventiladores y el televisor 1 (+6186.2). Como la regla salió de mirar marzo, se decide con desarrollo y marzo solo confirma.
 - **Desarrollo** (`uv run --locked --extra pronosticos python scripts/comparar_seleccion.py --salida results/seleccion_desarrollo`; 6 de enero–2 de marzo, 224 orígenes, λ_T y semillas de la configuración):
 
   | Política | J prioridad (Wh·p) | J mochila (Wh·p) | Diferencia |
@@ -224,7 +244,7 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
   | Reactiva | 597696.046 | 601259.043 | +3562.997 (+0.60 %) |
 
   La energía no atendida baja de 33831.6 a 27442.6 Wh (beta) y de 33431.0 a 26427.5 Wh (Chronos-2). El servicio de prioridad 1 sube de 68.50 % a 79.94 % (beta) y de 69.28 % a 82.35 % (Chronos-2); el de prioridad 2 baja de 94.91 % a 92.07 % y de 94.68 % a 91.20 %. En las dos ramas MPC, la energía crítica no atendida pasa de 203.2 a 212.4 Wh, de 100820.8 Wh: la mochila gasta antes energía no crítica. En la reactiva no cambia.
-- **Marzo** (`uv run --locked --extra pronosticos python -m src.experimento --seleccion mochila --salida results/t05_mochila`): \(J_A=288165.342\) (+2450.918, +0.86 %), \(J_B=288650.041\) (+2430.017, +0.85 %) y reactiva 287915.094 (+2674.250, +0.94 %) Wh·p. \(J_B-J_A=+484.699\) Wh·p, frente a +505.599 con la regla de prioridad: la regla pesa unas cinco veces más que el cambio de pronóstico. La energía no atendida baja de 16418.2/16352.9 a 12300.4/12245.0 Wh (A/B). La prioridad 1 sube a 85.38 %/84.47 % y la 2 baja a 88.87 %/89.62 %. El servicio crítico sigue en 100 %, el nivel de servicio horario en 93.01 % y los compromisos incumplidos pasan de 29/35 a 30/39.
+- **Marzo** (`uv run --locked --extra pronosticos python -m src.experimento --seleccion mochila --salida results/t05_mochila`): \(J_A=288165.342\) (+2450.918, +0.86 %), \(J_B=288650.041\) (+2430.017, +0.85 %) y reactiva 287915.094 (+2674.250, +0.94 %) Wh·p. \(J_B-J_A=+484.699\) Wh·p, frente a +505.599 con la regla de prioridad: la regla pesa unas cinco veces más que el cambio de pronóstico. La energía no atendida baja de 16418.2/16352.9 a 12300.4/12245.0 Wh (A/B). La prioridad 1 sube a 85.38 %/84.47 % y la 2 baja a 88.87 %/89.62 %. El servicio crítico sigue en 100 %, el nivel de servicio horario en 93.01 % y los compromisos incumplidos pasan de 29/35 a 30/39. Las tres políticas terminan con la misma energía que con la regla de prioridad (1927.59 y 2400 Wh), así que la cota del diagnóstico también vale para ellas: la distancia de B al óptimo baja de 5158.577 a 2728.560 Wh·p (−47 %).
 - **Verificaciones.** Cero violaciones físicas y cero filtraciones; pareo de los 112 orígenes y repetición interna exacta (30 h, 5 orígenes, 0 Wh). Con la regla predeterminada, `python -m src.experimento` reproduce T05: CSV de resultados idénticos byte a byte y, en `tabla_ab.csv`, solo cambian los tiempos medidos. En marzo, la ejecución con mochila duró 281.6 s en CPU.
 - **Lectura y límites.** La mejora no depende del pronóstico y aparece en las tres políticas y en ambos periodos. Su costo es un cambio de criterio: maximiza (10) en lugar del orden estricto de prioridad del algoritmo 2, por lo que baja el servicio de prioridad 2. Adoptarla es una decisión de modelado, no un resultado validado. Los resultados son exploratorios, con demanda sintética y una sola realización.
 
@@ -255,7 +275,8 @@ src/
 ├── pronosticos.py   # Chronos-2, beta y correcciones comunes
 ├── simulador.py     # FV, baterías, despacho y cargas
 ├── controlador.py   # escenarios y MPC compartido
-└── experimento.py   # T05: evaluación pareada, métricas, tabla y gráficos
+├── experimento.py   # T05: evaluación pareada, métricas, tabla y gráficos
+└── cotas.py         # diagnóstico: oráculo y óptimo con información perfecta (no admisibles)
 ```
 
 La implementación puede reunir funciones cortas en menos archivos si resulta más clara; **la estructura es orientativa**, no un requisito arquitectónico. Una configuración y un comando de experimento son suficientes. Preferir `numpy`, `pandas`, `scipy`, `matplotlib` y dependencias oficiales de Chronos-2 sobre desarrollar librerías propias. Añadir pruebas breves y enfocadas en invariantes matemáticos, tiempo de pronóstico y comparación justa; evitar pruebas extensas de infraestructura que no intervienen en la investigación.
@@ -268,6 +289,7 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 | **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completada y verificada en CPU** |
 | **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
 | **Selección exacta (mochila)** (adaptación, rama `experiment/seleccion-mochila`) | Opción `seleccion_cargas` desactivada por defecto; T05 sin cambios; comparación en desarrollo con `scripts/comparar_seleccion.py` | **Evaluada en CPU (desarrollo y marzo)** |
+| **Diagnóstico con información perfecta** (rama `experiment/seleccion-mochila`) | `python -m src.cotas`: oráculo del MPC y óptimo MILP verificado y re-simulado; T05 sin cambios | **Ejecutado en CPU (marzo)** |
 
 Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 presentará el experimento final.
 
