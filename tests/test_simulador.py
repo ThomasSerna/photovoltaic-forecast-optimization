@@ -1,14 +1,17 @@
 """Casos manuales de la física y heurística de IDEA.md §4 (Wh, paso de 1 h)."""
 
 from copy import deepcopy
+import itertools
 import math
 from pathlib import Path
+import random
 
 import pandas as pd
 import pytest
 
 from src import cargar_caso
-from src.simulador import _despachar, _energia_fotovoltaica, _limite_descarga, simular
+from src.simulador import (PRIORIDAD_CRITICA, _despachar, _energia_fotovoltaica, _limite_descarga,
+                           _limites_reserva, simular)
 
 
 @pytest.fixture
@@ -145,6 +148,97 @@ def test_limite_nominal_es_distinto_de_la_energia_horaria(sistema, limite):
     resultado = simular(demanda, _solar(1000.), sistema)
     assert resultado["cargas"].set_index("carga_id")["z"].to_dict() == {"a": 0, "b": 1}
     assert resultado["horas"]["potencia_atendida_w"].tolist() == [40.]
+
+
+def _servicio(resultado):
+    return resultado["cargas"].set_index("carga_id")["z"].to_dict()
+
+
+def test_mochila_en_hora_limitada_por_potencia(sistema):
+    # 100 W y 100 Wh FV: sobra energía, limita la potencia. Beneficio p·D entre paréntesis.
+    demanda = _demanda(("a", 5., 3, 10.), ("l", 15., 2, 60.), ("tv", 10., 2, 25.),
+                       *((f"v{i}", 11., 1, 12.) for i in range(1, 6)))
+    prioridad = simular(demanda, _solar(1000.), sistema)
+    # Prioridad: a (15), l (30) y tv (20) ocupan 95 W; ningún ventilador cabe. J = 65.
+    assert _servicio(prioridad) == {"a": 1, "l": 1, "tv": 1, **{f"v{i}": 0 for i in range(1, 6)}}
+    assert prioridad["resumen"]["J"] == pytest.approx(65.)
+    assert simular(demanda, _solar(1000.), dict(sistema, seleccion_cargas="prioridad"))["cargas"].equals(
+        prioridad["cargas"])
+    # Mochila: la crítica primero; en 90 W, tv + 5 ventiladores (75) supera a l + tv (50).
+    mochila = simular(demanda, _solar(1000.), dict(sistema, seleccion_cargas="mochila"))
+    assert _servicio(mochila) == {"a": 1, "l": 0, "tv": 1, **{f"v{i}": 1 for i in range(1, 6)}}
+    assert mochila["resumen"]["J"] == pytest.approx(90.)
+    assert mochila["horas"]["potencia_atendida_w"].tolist() == [95.]
+    assert mochila["horas"]["atendida_wh"].tolist() == [70.]
+    assert mochila["cargas"]["x"].equals(mochila["cargas"]["z"])
+
+
+def test_mochila_no_cambia_horas_sin_limite_de_potencia(sistema):
+    sistema["baterias"][0]["inicial_wh"] = 60.
+    demanda = pd.concat([_demanda(("grande", 30., 3, 30.), ("menor", 20., 2, 20.), ("otra", 4., 1, 5.)),
+                         _demanda(("grande", 10., 3, 30.), ("menor", 0., 2, 20.), ("otra", 4., 1, 5.), t=1)])
+    prioridad = simular(demanda, _solar(0., 30.), sistema)
+    mochila = simular(demanda, _solar(0., 30.), dict(sistema, seleccion_cargas="mochila"))
+    for tabla in ("cargas", "horas", "baterias"):
+        assert mochila[tabla].equals(prioridad[tabla])
+    assert mochila["estado_final"] == prioridad["estado_final"]
+
+
+def _mejor_por_enumeracion(cargas, fv_wh, sistema, estado, reserva, criticas):
+    """Fuerza bruta independiente: críticas dadas, luego el mejor subconjunto factible."""
+    baterias = sistema["baterias"]
+    potencia_max = min(sistema["potencia_bus_max_w"], sistema["pv"]["inversor_max_w"])
+    e0 = [c["demanda_wh"] for c in criticas]
+    p0 = [c["potencia_w_supuesta"] for c in criticas]
+    no_criticas = [c for c in cargas if c["prioridad_supuesta"] < PRIORIDAD_CRITICA]
+    if reserva and no_criticas:
+        disponible = math.fsum([fv_wh, *_limites_reserva(baterias, estado, fv_wh, math.fsum(e0), reserva).values()])
+    else:
+        disponible = math.fsum([fv_wh, *(_limite_descarga(b, estado[b["id"]]) for b in baterias)])
+    mejor = 0.
+    elegibles = [c for c in no_criticas if c["demanda_wh"] > 0]
+    for r in range(len(elegibles) + 1):
+        for sub in itertools.combinations(elegibles, r):
+            if (math.fsum([*e0, *(c["demanda_wh"] for c in sub)]) <= disponible
+                    and math.fsum([*p0, *(c["potencia_w_supuesta"] for c in sub)]) <= potencia_max):
+                mejor = max(mejor, math.fsum(c["prioridad_supuesta"] * c["demanda_wh"] for c in sub))
+    return mejor + math.fsum(c["prioridad_supuesta"] * c["demanda_wh"] for c in criticas)
+
+
+def test_mochila_coincide_con_fuerza_bruta_y_nunca_empeora_la_hora(sistema):
+    rng = random.Random(20261025)
+    sistema["baterias"].append(dict(sistema["baterias"][0], id="c", potencia_descarga_max_w=15.))
+    limitadas = 0
+    for _ in range(150):
+        cargas = []
+        for i in range(rng.randint(2, 8)):
+            potencia = rng.choice([5., 10., 20., 40., 60.])
+            demanda = rng.choice([0., round(rng.uniform(0.5, potencia), 3)])
+            cargas.append((f"c{i}", demanda, rng.choice([1, 1, 2, 2, 3]), potencia))
+        demanda = _demanda(*cargas)
+        estado = {"b": rng.uniform(20., 100.), "c": rng.uniform(20., 100.)}
+        ghi, reserva = rng.choice([0., rng.uniform(0., 1000.)]), rng.choice([0, 0, 0.25, 0.5])
+        prioridad = simular(demanda, _solar(ghi), sistema, estado_inicial=estado, reserva=reserva)
+        mochila = simular(demanda, _solar(ghi), dict(sistema, seleccion_cargas="mochila"),
+                          estado_inicial=estado, reserva=reserva)
+        detalle_p, detalle_m = (r["cargas"].set_index("carga_id") for r in (prioridad, mochila))
+        es_critica = detalle_m["prioridad_supuesta"] >= PRIORIDAD_CRITICA
+        assert detalle_m.loc[es_critica, "z"].equals(detalle_p.loc[es_critica, "z"])
+        assert mochila["resumen"]["J"] >= prioridad["resumen"]["J"] - 1e-9
+        if sum(p for _, d, _, p in cargas if d > 0) > 100.:
+            limitadas += 1
+            criticas = detalle_m.loc[es_critica & detalle_m["z"].eq(1)].reset_index().to_dict("records")
+            esperado = _mejor_por_enumeracion(demanda.to_dict("records"), _energia_fotovoltaica(ghi, sistema["pv"]),
+                                              sistema, estado, reserva, criticas)
+            assert mochila["resumen"]["J"] == pytest.approx(esperado, abs=1e-9)
+        else:
+            assert mochila["cargas"].equals(prioridad["cargas"])
+    assert limitadas >= 20
+
+
+def test_seleccion_desconocida_se_rechaza(sistema):
+    with pytest.raises(ValueError, match="seleccion_cargas"):
+        simular(_demanda(("a", 5., 1, 5.)), _solar(0.), dict(sistema, seleccion_cargas="voraz"))
 
 
 def test_no_se_amplia_el_presupuesto_con_la_tolerancia(sistema):
@@ -290,8 +384,10 @@ def test_rechaza_compromisos_invalidos(sistema, cambio):
         simular(demanda, _solar(0.), sistema, compromisos=plan)
 
 
-def test_desarrollo_completo_conserva_todos_los_limites_y_balances():
+@pytest.mark.parametrize("seleccion", ["prioridad", "mochila"])
+def test_desarrollo_completo_conserva_todos_los_limites_y_balances(seleccion):
     caso = cargar_caso(Path(__file__).resolve().parents[1] / "scripts/configuracion.json")
+    caso.configuracion["seleccion_cargas"] = seleccion
     demanda = caso.demanda.loc[caso.demanda.particion == "desarrollo"]
     solar = caso.irradiancia_simulacion.loc[caso.irradiancia_simulacion.particion == "desarrollo"]
     resultado = simular(demanda, solar, caso.configuracion)

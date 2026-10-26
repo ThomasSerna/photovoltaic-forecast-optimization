@@ -22,6 +22,9 @@ HORAS_CON_CLASE = range(CLASES_INICIO_H, math.ceil(CLASES_FIN_H))  # 7..12: hora
 ID_NEVERA = "nevera_01"  # única carga permanente a la que se asigna energía
 
 PERIODOS = ("historial_previo", "desarrollo", "evaluacion", "reserva_no_usada")
+# Regla de selección de cargas (IDEA §4.4): "prioridad" reproduce T03–T05 y es la
+# predeterminada si falta la clave; "mochila" es una adaptación opcional del proyecto.
+SELECCIONES = ("prioridad", "mochila")
 ARCHIVOS = (
     "catalogo", "demanda", "diaria", "horaria", "lecturas", "intervalos",
     "calendario", "irradiancia_historica", "irradiancia_simulacion",
@@ -209,6 +212,8 @@ def _validar_control(config):
     for campo in ("semilla", "semilla_escenarios"):
         numero(config[campo], campo, entero=True)
     numero(config["lambda_terminal"], "lambda_terminal")
+    if config.get("seleccion_cargas", "prioridad") not in SELECCIONES:
+        raise ValueError(f"seleccion_cargas: se admite {SELECCIONES}")
 
 
 def _validar_pv(pv):

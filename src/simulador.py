@@ -9,7 +9,7 @@ import math
 
 import pandas as pd
 
-from .configuracion import RESOLUCION_H, numero
+from .configuracion import RESOLUCION_H, SELECCIONES, numero
 from .datos import TOLERANCIA_NUMERICA
 
 PRIORIDAD_CRITICA = 3  # IDEA §6: solo p >= 3 puede descargar por debajo de la reserva
@@ -164,13 +164,29 @@ def _limites_reserva(baterias, estado, fv_wh, critica_wh, reserva):
     return limites
 
 
-def _seleccionar(cargas, fv_wh, baterias, estado, potencia_max_w, calendario_fijo, reserva):
-    """Interpretación de algoritmos 1–2: (-prioridad, -energía, id), servicio completo."""
+def _registrar_servicio(carga, calendario_fijo):
+    if not calendario_fijo:
+        carga["x"] = carga["z"]
+    carga["comprometida_wh"] = carga["demanda_wh"] * carga["x"]
+    carga["atendida_wh"] = carga["demanda_wh"] * carga["z"]
+    carga["no_atendida_wh"] = carga["demanda_wh"] - carga["atendida_wh"]
+
+
+def _seleccionar(cargas, fv_wh, baterias, estado, potencia_max_w, calendario_fijo, reserva,
+                 seleccion="prioridad"):
+    """Interpretación de algoritmos 1–2: (-prioridad, -energía, id), servicio completo.
+
+    Con seleccion="mochila" y potencia nominal candidata superior al límite, delega en
+    _seleccionar_mochila (adaptación opcional, IDEA §4.4); en otro caso no cambia nada.
+    """
+    orden = sorted(cargas, key=lambda c: (-c["prioridad_supuesta"], -c["demanda_wh"], c["carga_id"]))
+    if (seleccion == "mochila"
+            and math.fsum(c["potencia_w_supuesta"] for c in orden if c["x"] == 1) > potencia_max_w):
+        return _seleccionar_mochila(orden, fv_wh, baterias, estado, potencia_max_w, calendario_fijo, reserva)
     energias, potencias = [], []
     disponible_wh = math.fsum([fv_wh, *(_limite_descarga(b, estado[b["id"]]) for b in baterias)])
     limites = None
-    for carga in sorted(cargas, key=lambda c: (-c["prioridad_supuesta"],
-                                              -c["demanda_wh"], c["carga_id"])):
+    for carga in orden:
         if reserva and carga["prioridad_supuesta"] < PRIORIDAD_CRITICA and limites is None:
             limites = _limites_reserva(baterias, estado, fv_wh, math.fsum(energias), reserva)
             disponible_wh = math.fsum([fv_wh, *limites.values()])
@@ -180,11 +196,49 @@ def _seleccionar(cargas, fv_wh, baterias, estado, potencia_max_w, calendario_fij
         if carga["z"]:
             energias.append(carga["demanda_wh"])
             potencias.append(carga["potencia_w_supuesta"])
-        if not calendario_fijo:
-            carga["x"] = carga["z"]
-        carga["comprometida_wh"] = carga["demanda_wh"] * carga["x"]
-        carga["atendida_wh"] = carga["demanda_wh"] * carga["z"]
-        carga["no_atendida_wh"] = carga["demanda_wh"] - carga["atendida_wh"]
+        _registrar_servicio(carga, calendario_fijo)
+    return math.fsum(energias), math.fsum(potencias), limites
+
+
+def _seleccionar_mochila(orden, fv_wh, baterias, estado, potencia_max_w, calendario_fijo, reserva):
+    """Críticas con la regla de prioridad; no críticas por enumeración exacta de subconjuntos.
+
+    Maximiza Σ p·D, el beneficio de la ecuación (10), con los mismos presupuestos de energía
+    (o límites de reserva de §6) y potencia nominal que la regla original, sin tolerancia.
+    Empates: menor energía y después la primera máscara en el orden (-p, -D, id).
+    """
+    energias, potencias = [], []
+    disponible_wh = math.fsum([fv_wh, *(_limite_descarga(b, estado[b["id"]]) for b in baterias)])
+    limites = None
+    no_criticas = [c for c in orden if c["prioridad_supuesta"] < PRIORIDAD_CRITICA]
+    for carga in orden:
+        if carga["prioridad_supuesta"] >= PRIORIDAD_CRITICA:
+            energia = math.fsum([*energias, carga["demanda_wh"]])
+            potencia = math.fsum([*potencias, carga["potencia_w_supuesta"]])
+            carga["z"] = int(carga["x"] == 1 and energia <= disponible_wh and potencia <= potencia_max_w)
+            if carga["z"]:
+                energias.append(carga["demanda_wh"])
+                potencias.append(carga["potencia_w_supuesta"])
+    if reserva and no_criticas:
+        limites = _limites_reserva(baterias, estado, fv_wh, math.fsum(energias), reserva)
+        disponible_wh = math.fsum([fv_wh, *limites.values()])
+    elegibles = [c for c in no_criticas if c["x"] == 1]
+    mejor, clave_mejor = [], None
+    for mascara in range(2 ** len(elegibles)):
+        subconjunto = [c for i, c in enumerate(elegibles) if mascara >> i & 1]
+        energia = math.fsum([*energias, *(c["demanda_wh"] for c in subconjunto)])
+        potencia = math.fsum([*potencias, *(c["potencia_w_supuesta"] for c in subconjunto)])
+        if energia <= disponible_wh and potencia <= potencia_max_w:
+            clave = (math.fsum(c["prioridad_supuesta"] * c["demanda_wh"] for c in subconjunto), -energia)
+            if clave_mejor is None or clave > clave_mejor:
+                mejor, clave_mejor = subconjunto, clave
+    elegidas = {c["carga_id"] for c in mejor}
+    for carga in no_criticas:
+        carga["z"] = int(carga["carga_id"] in elegidas)
+    energias.extend(c["demanda_wh"] for c in mejor)
+    potencias.extend(c["potencia_w_supuesta"] for c in mejor)
+    for carga in orden:
+        _registrar_servicio(carga, calendario_fijo)
     return math.fsum(energias), math.fsum(potencias), limites
 
 
@@ -198,6 +252,8 @@ def simular(demanda, irradiancia, configuracion, *, estado_inicial=None, comprom
     `reserva` en [0, 1] protege esa fracción de la capacidad utilizable individual
     solo ante cargas de prioridad < 3; genera candidatos de T04. Una reserva
     no nula es incompatible con compromisos fijos, evaluados sin otra reserva.
+    `configuracion["seleccion_cargas"]` elige la regla de selección: "prioridad"
+    (por defecto, también si falta) o "mochila", adaptación opcional de IDEA §4.4.
 
     Devuelve tablas cargas/horas/baterias, estado_final por batería y resumen
     energético con J y S_pond. Para continuar, pasar estado_final a la siguiente
@@ -205,6 +261,9 @@ def simular(demanda, irradiancia, configuracion, *, estado_inicial=None, comprom
     """
     numero(configuracion["resolucion_h"], "resolucion_h", minimo=1, maximo=1, entero=True)
     numero(reserva, "reserva", maximo=1)
+    seleccion = configuracion.get("seleccion_cargas", "prioridad")
+    if seleccion not in SELECCIONES:
+        raise ValueError(f"seleccion_cargas: se admite {SELECCIONES}; recibido {seleccion!r}")
     if reserva and compromisos is not None:
         raise ValueError("reserva: solo se aplica al generar planes, sin compromisos fijos")
     demanda, irradiancia = _preparar_entradas(demanda, irradiancia, compromisos)
@@ -217,7 +276,7 @@ def simular(demanda, irradiancia, configuracion, *, estado_inicial=None, comprom
         cargas = grupo.to_dict("records")
         fv_wh = _energia_fotovoltaica(ghi[t], configuracion["pv"])
         atendida_wh, potencia_w, limites = _seleccionar(
-            cargas, fv_wh, baterias, estado, potencia_max_w, compromisos is not None, reserva)
+            cargas, fv_wh, baterias, estado, potencia_max_w, compromisos is not None, reserva, seleccion)
         flujos, estado, vertido_wh = _despachar(fv_wh, atendida_wh, baterias, estado, limites)
         solicitada_wh = math.fsum(c["demanda_wh"] for c in cargas)
         comprometida_wh = math.fsum(c["comprometida_wh"] for c in cargas)

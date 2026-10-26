@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (19 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`).
+**Estado (19 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). En la rama `experiment/seleccion-mochila`, **regla opcional de selección exacta (mochila)**, desactivada por defecto y evaluada en desarrollo y marzo (§§4.4 y 7).
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -110,6 +110,8 @@ Sin calendario externo se fija \(x=z\). Con compromisos fijos solo son candidata
 
 No se redondean flujos ni estados intermedios. Se verifican balances y límites con tolerancia absoluta de \(10^{-6}\) Wh, sin añadir esa tolerancia a los presupuestos de selección. Los casos manuales incluyen noche, excedente, batería al mínimo, batería llena, déficit y baterías heterogéneas.
 
+**Adaptación opcional: selección exacta (mochila).** La clave `seleccion_cargas` de la configuración vale `"prioridad"` (regla anterior, predeterminada también si falta la clave) o `"mochila"`. `scripts/configuracion.json` no la define, de modo que T03–T05 no cambian. Con `"mochila"`, la regla solo cambia en las horas **limitadas por potencia**, cuando la potencia nominal de las candidatas supera \(\min(P_{\mathrm{inv,max}},P_{\mathrm{bus,max}})\). Las críticas (\(p\ge3\)) se siguen eligiendo primero con la regla de prioridad. Las no críticas se eligen enumerando todos los subconjuntos factibles y maximizando \(\sum_k p_kD_k\), con los mismos presupuestos de energía (o límites de reserva de §6) y de potencia, sin tolerancia añadida. Los empates se resuelven por menor energía y después por el orden \((-p,-D,\text{id})\). Hay a lo sumo \(2^{12}\) subconjuntos por hora. El despacho único, el calendario fijo y la verificación física no cambian, y la regla elegida se aplica igual a todas las políticas, a los candidatos del MPC y a la referencia reactiva. La regla optimiza el beneficio horario de la ecuación (10), pero deja de respetar el orden estricto de prioridad del algoritmo 2: una carga de prioridad 2 puede ceder su potencia a varias de prioridad 1 con mayor \(\sum p_kD_k\). Sigue siendo una heurística horaria y no certifica el óptimo del periodo. Los resultados están en §7.
+
 ### 4.5. Correspondencia con el artículo y diferencias
 
 Se consultaron §2.2 (pp. 5–6) y los algoritmos 1–2 (p. 8) del [PDF oficial](https://mdpi-res.com/d_attachment/energies/energies-14-02789/article_deploy/energies-14-02789.pdf). Los índices día/periodo del artículo se reúnen en la secuencia horaria \(t\).
@@ -121,13 +123,13 @@ Se consultaron §2.2 (pp. 5–6) y los algoritmos 1–2 (p. 8) del [PDF oficial]
 | (5)–(6) | Continuidad por batería y conservación en el bus. Se añaden eficiencias individuales y vertido explícito; no se crea energía ni se descuenta una carga rechazada. |
 | (8)–(9) | Servicio completo y solicitudes binarias: \(z\le x\le r\). La (9) impresa compara una decisión binaria con demanda en Wh; se usa el indicador \(r\), conservando la energía en el balance. |
 | (10) | Beneficio ponderado de las cargas efectivamente atendidas. La selección voraz busca ese criterio sin certificar un máximo global. |
-| Algoritmos 1–2 | El primero despacha usando un orden por consumo y el segundo selecciona según prioridad. Para evitar descontar energía de una selección provisional distinta, T03 selecciona primero y despacha una sola vez. Prioridad, consumo, desempate por identificador y reparto por batería quedan fijados explícitamente. |
+| Algoritmos 1–2 | El primero despacha usando un orden por consumo y el segundo selecciona según prioridad. Para evitar descontar energía de una selección provisional distinta, T03 selecciona primero y despacha una sola vez. Prioridad, consumo, desempate por identificador y reparto por batería quedan fijados explícitamente. La opción `seleccion_cargas="mochila"` (§4.4) sustituye el orden voraz de las no críticas por la maximización exacta de (10) solo en horas limitadas por potencia; es una adaptación del proyecto, desactivada por defecto. |
 
 La conversión FV, el paso horario, las eficiencias, los límites de potencia y la topología común son supuestos físicos del caso semisintético. Estas decisiones concretan una adaptación consistente; no validan numéricamente el caso original de Volcanes ni el comportamiento eléctrico dentro de una hora.
 
 ### 4.6. Interfaz reproducible de T03
 
-`simular(demanda, irradiancia, configuracion, *, estado_inicial=None, compromisos=None, reserva=0)` recibe la demanda existente, una tabla explícita `t, ghi_w_m2` y la configuración validada de T01. El estado opcional es `{bateria_id: energia_wh}`; los compromisos opcionales son `t, carga_id, x` para todas las filas de demanda. Se validan horas consecutivas, claves, dominios y límites individuales, sin modificar entradas ni buscar meteorología por cuenta propia. T04 añade `reserva` en [0, 1] solo para generar candidatos (§6); cero conserva el comportamiento de T03 y una reserva no nula se rechaza junto con compromisos fijos.
+`simular(demanda, irradiancia, configuracion, *, estado_inicial=None, compromisos=None, reserva=0)` recibe la demanda existente, una tabla explícita `t, ghi_w_m2` y la configuración validada de T01. El estado opcional es `{bateria_id: energia_wh}`; los compromisos opcionales son `t, carga_id, x` para todas las filas de demanda. Se validan horas consecutivas, claves, dominios y límites individuales, sin modificar entradas ni buscar meteorología por cuenta propia. La clave opcional `configuracion["seleccion_cargas"]` elige la regla de §4.4. T04 añade `reserva` en [0, 1] solo para generar candidatos (§6); cero conserva el comportamiento de T03 y una reserva no nula se rechaza junto con compromisos fijos.
 
 Devuelve tablas `cargas` (solicitud, compromiso y servicio), `horas` (energías y vertido), `baterias` (estados y flujos individuales), el diccionario `estado_final` y un `resumen` de energías, \(J\) y \(S_{\mathrm{pond}}\). No escribe archivos. Las pruebas `test_continuidad_entre_horizontes_y_entradas_sin_mutacion` y `test_compromiso_fijo_con_deficit_y_sin_sustituciones` de `tests/test_simulador.py` muestran la continuación mediante estados y la ejecución de un calendario fijo. La rutina es determinista y no introduce semillas nuevas; los datos sintéticos conservan las semillas de T01. Las pruebas incluyen casos manuales, heterogeneidad y recorrido completo de desarrollo; la comparación de control y pronósticos pertenece a T04–T05.
 
@@ -210,6 +212,22 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
 
 **Lectura del resultado.** Un pronóstico mejor no se traduce automáticamente en más servicio. Con calendario fijo (\(z\le x\)), una mediana pesimista deja cargas sin comprometer y una optimista compromete cargas que luego se desconectan: Chronos registró 35 compromisos incumplidos y beta, 29. El efecto neto depende de pocos días nublados. Estas cifras son exploratorias y no permiten afirmar significancia.
 
+**Análisis adicional: selección exacta (mochila)** (rama `experiment/seleccion-mochila`; regla de §4.4, adaptación del proyecto).
+
+- **Motivación.** Un diagnóstico exploratorio de marzo, fuera del repositorio, comparó el MPC con un óptimo mensual con información perfecta (MILP con la física de §4). Mostró que cerca de la mitad de la distancia al óptimo se pierde a las 10:00 de los días lectivos: con 2000 W, la regla de prioridad enciende la licuadora (p=2, 600 W) y deja fuera seis ventiladores y un televisor, que suman más \(\sum p_kD_k\). Como la regla salió de mirar marzo, se decide con desarrollo y marzo solo confirma.
+- **Desarrollo** (`uv run --locked --extra pronosticos python scripts/comparar_seleccion.py --salida results/seleccion_desarrollo`; 6 de enero–2 de marzo, 224 orígenes, λ_T y semillas de la configuración):
+
+  | Política | J prioridad (Wh·p) | J mochila (Wh·p) | Diferencia |
+  |---|---:|---:|---:|
+  | Beta | 596763.723 | 599615.028 | +2851.305 (+0.48 %) |
+  | Chronos-2 | 596883.430 | 599552.182 | +2668.752 (+0.45 %) |
+  | Reactiva | 597696.046 | 601259.043 | +3562.997 (+0.60 %) |
+
+  La energía no atendida baja de 33831.6 a 27442.6 Wh (beta) y de 33431.0 a 26427.5 Wh (Chronos-2). El servicio de prioridad 1 sube de 68.50 % a 79.94 % (beta) y de 69.28 % a 82.35 % (Chronos-2); el de prioridad 2 baja de 94.91 % a 92.07 % y de 94.68 % a 91.20 %. En las dos ramas MPC, la energía crítica no atendida pasa de 203.2 a 212.4 Wh, de 100820.8 Wh: la mochila gasta antes energía no crítica. En la reactiva no cambia.
+- **Marzo** (`uv run --locked --extra pronosticos python -m src.experimento --seleccion mochila --salida results/t05_mochila`): \(J_A=288165.342\) (+2450.918, +0.86 %), \(J_B=288650.041\) (+2430.017, +0.85 %) y reactiva 287915.094 (+2674.250, +0.94 %) Wh·p. \(J_B-J_A=+484.699\) Wh·p, frente a +505.599 con la regla de prioridad: la regla pesa unas cinco veces más que el cambio de pronóstico. La energía no atendida baja de 16418.2/16352.9 a 12300.4/12245.0 Wh (A/B). La prioridad 1 sube a 85.38 %/84.47 % y la 2 baja a 88.87 %/89.62 %. El servicio crítico sigue en 100 %, el nivel de servicio horario en 93.01 % y los compromisos incumplidos pasan de 29/35 a 30/39.
+- **Verificaciones.** Cero violaciones físicas y cero filtraciones; pareo de los 112 orígenes y repetición interna exacta (30 h, 5 orígenes, 0 Wh). Con la regla predeterminada, `python -m src.experimento` reproduce T05: CSV de resultados idénticos byte a byte y, en `tabla_ab.csv`, solo cambian los tiempos medidos. En marzo, la ejecución con mochila duró 281.6 s en CPU.
+- **Lectura y límites.** La mejora no depende del pronóstico y aparece en las tres políticas y en ambos periodos. Su costo es un cambio de criterio: maximiza (10) en lugar del orden estricto de prioridad del algoritmo 2, por lo que baja el servicio de prioridad 2. Adoptarla es una decisión de modelado, no un resultado validado. Los resultados son exploratorios, con demanda sintética y una sola realización.
+
 **Correspondencia con los indicadores del artículo (§4.2).** El artículo mide el *service level* (porcentaje de réplicas en que se cubre la demanda) y el *missing of fulfilment* (porcentaje medio no cubierto). T05 calcula sus análogos sobre la trayectoria realizada: la proporción de horas con demanda atendida por completo y la fracción media no atendida en las horas con déficit. La diferencia está en la base: horas de una sola realización, no réplicas. Los bloques y rangos comunes de A y B cumplen el papel de los números aleatorios comunes que usa el artículo (§3.1) para comparar soluciones. No se compara numéricamente con el caso Volcanes, porque los datos, el sistema y la demanda difieren.
 
 **Indicadores principales** (calculados sobre ejecución realizada):
@@ -249,6 +267,7 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 | **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/3)) | Física corregida por batería, heurística y restricciones verificables | **Completada** |
 | **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completada y verificada en CPU** |
 | **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
+| **Selección exacta (mochila)** (adaptación, rama `experiment/seleccion-mochila`) | Opción `seleccion_cargas` desactivada por defecto; T05 sin cambios; comparación en desarrollo con `scripts/comparar_seleccion.py` | **Evaluada en CPU (desarrollo y marzo)** |
 
 Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 presentará el experimento final.
 

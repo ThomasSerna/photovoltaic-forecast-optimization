@@ -533,6 +533,7 @@ def main():
     from pathlib import Path
 
     from .cli import codigo_sha256, entradas_sha256, entorno, sha256_de
+    from .configuracion import SELECCIONES
     from .controlador import proveedores
     from .datos import cargar_caso
     from .pronosticos import cargar_chronos
@@ -540,9 +541,14 @@ def main():
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
     parser.add_argument("--salida", type=Path, default=Path("results/t05_evaluacion"))
+    parser.add_argument("--seleccion", choices=SELECCIONES,
+                        help="Regla de selección de cargas para todas las políticas (IDEA §4.4); "
+                             "por defecto, la de la configuración")
     args = parser.parse_args()
     try:
         caso = cargar_caso(args.config)
+        if args.seleccion is not None:
+            caso.configuracion["seleccion_cargas"] = args.seleccion
         config = caso.configuracion
         salida = args.salida.resolve()
         if salida == args.config.resolve() or salida in [p.resolve() for p in caso.rutas.values()]:
@@ -571,7 +577,8 @@ def main():
             periodo_local=config["periodos"]["evaluacion"],
             estado_inicial={b["id"]: b["inicial_wh"] for b in config["baterias"]},
             semillas={"demanda": config["semilla"], "escenarios": config["semilla_escenarios"]},
-            control={c: config[c] for c in ("horizonte", "replanificacion", "escenarios", "lambda_terminal")},
+            control=dict({c: config[c] for c in ("horizonte", "replanificacion", "escenarios", "lambda_terminal")},
+                         seleccion_cargas=config.get("seleccion_cargas", "prioridad")),
             tiempos=dict(evaluacion["tiempos"], carga_chronos_s=carga_s, total_s=duracion),
             verificaciones=dict(fisica=evaluacion["fisica"], pareo=evaluacion["pareo"],
                                 reproducibilidad=reproducibilidad),
