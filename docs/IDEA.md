@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (19 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`).
+**Estado:** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC original y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). T06 incorpora un modo MPC sensible al riesgo; su calibración queda para T07.
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -161,6 +161,8 @@ e_b=\min\!\left(L_b-a_b,\;\eta_{d,b}\max\!\left(0,C_{b,t}-\frac{a_b}{\eta_{d,b}}
 
 El único despacho final respeta \(d_b\le a_b+e_b\) **individualmente**, además de las restricciones de §4. No basta limitar la energía agregada, pues podría consumir la reserva de otra batería. Las críticas pueden descargar hasta el mínimo físico. La reserva solo genera candidatos; la evaluación y ejecución de compromisos fijos usan los mínimos físicos originales, sin reserva adicional.
 
+### 6.1. Modo original (T04)
+
 Para cada origen de pronóstico:
 
 1. Calcular cuantiles y construir \(N\) escenarios comunes.
@@ -182,6 +184,38 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
 `planificar_mpc(...)` devuelve los cuatro calendarios, sus puntuaciones y el compromiso elegido; los empates favorecen la menor reserva. Los calendarios idénticos reutilizan su evaluación. `ejecutar_mpc(caso, pronosticar, *, inicio, fin, estado_inicial=None)` recibe un callback `(historia_admisible, origen_utc, horizonte)` que devuelve cuantiles crudos; aplica las correcciones y escenarios comunes y entrega las tablas de T03, decisiones y pronósticos con sus diagnósticos. El calendario validado alinea UTC y `t`. Al terminar el periodo, \(H_{\mathrm{ef}}=\min(H,\text{horas restantes})\) y se ejecutan como máximo \(R\) horas restantes. Se concatenan solo resultados realizados y se recalcula \(S_{\mathrm{pond}}\) sobre sus totales. `src/experimento.py` carga Chronos una sola vez y `controlador.proveedores` crea los callbacks de beta y Chronos que recibe `ejecutar_mpc`.
 
 **Prueba de anticipación implementada:** en un caso artificial de dos horas y batería útil de 1 Wh, sin sol ahora, con carga actual de prioridad 1 y futura de prioridad 3, la decisión presente cambia si el pronóstico futuro —mediana y escenarios— pasa de 0 a 1 Wh solar. Las pruebas también cubren compromisos fijos, continuidad realizada, reservas heterogéneas, igualdad con proveedores idénticos y ausencia de información futura. Esto verifica la lógica anticipatoria del MPC, sin certificar optimalidad. El artículo selecciona soluciones frecuentes y propone MPC como extensión (§§3 y 6); este controlador y su puntuación son adaptaciones del proyecto.
+
+### 6.2. Modo sensible al riesgo (T06)
+
+T06 añade un modo alternativo de selección, común a beta y Chronos-2. Este MPC y el uso de CVaR son adaptaciones del proyecto: el artículo original no los implementa en sus experimentos. Para cada origen, genera hasta 12 calendarios con la heurística de §4.4, combinando los cuantiles horarios 0.1, 0.5 y 0.9 con las cuatro reservas anteriores. Calendarios idénticos se evalúan una sola vez; se conserva como representante el de menor reserva y, después, menor cuantil. Todos se simulan como compromisos fijos sobre los mismos 50 escenarios, con idéntico estado inicial individual. La reserva se usa únicamente para proponer el calendario: la evaluación y la ejecución mantienen los balances, la topología y los límites físicos de §4.
+
+Para un calendario \(a\), un escenario \(s\) y todo el horizonte efectivo \(H_{\mathrm{ef}}\), la pérdida de servicio es:
+
+\[
+L_s(a)=\sum_{h=1}^{H_{\mathrm{ef}}}\sum_k p_{k,h}D_{k,h}\bigl(1-z_{k,h}^{(a,s)}\bigr).
+\]
+
+Incluye toda la demanda solicitada no atendida, también la que no se comprometió en el calendario, y se expresa en Wh·p, igual que \(J\). El modo riesgo elige el mayor valor de:
+
+\[
+\mathrm{Score}_{\mathrm{CVaR}}(a)=\frac{1}{N}\sum_{s=1}^{N}J_s(a)-\lambda_R\,\mathrm{CVaR}_{\alpha}(L(a)).
+\]
+
+Este modo **no** incluye el término terminal \(\lambda_T\); el modo original conserva su puntuación y sus cuatro filas de reservas. Con empates de puntuación se elige la menor reserva y, después, el menor cuantil. Un peso \(\lambda_R=0\) en modo CVaR no equivale necesariamente al original: el conjunto de candidatos es más amplio.
+
+El CVaR empírico promedia la peor fracción \(1-\alpha\) de las pérdidas. Sean \(\ell_1\ge\cdots\ge\ell_N\) las pérdidas ordenadas, \(m=N(1-\alpha)\) y \(k=\lfloor m\rfloor\):
+
+\[
+\mathrm{CVaR}_{\alpha}=\frac{\sum_{i=1}^{k}\ell_i+(m-k)\ell_{k+1}}{m}.
+\]
+
+La fracción \(m-k\) pesa el escenario en la frontera en vez de redondear la cantidad de escenarios; véase [Rockafellar y Uryasev](https://sites.math.washington.edu/~rtr/papers/rtr187-CVaR2.pdf). Con \(N=50\) y el valor inicial \(\alpha=0.9\) se promedian los cinco peores. Con \(\alpha=0.95\) se usan los dos peores y la mitad del tercero. El CVaR describe esta muestra: 50 escenarios no garantizan calibración de las colas ni protección fuera de muestra.
+
+La configuración acepta `modo_mpc` igual a `original` o `cvar`; si se omite, usa `original`. En modo CVaR, `lambda_riesgo` debe proporcionarse explícitamente, ser finito y no negativo; `alpha_cvar` es opcional, con valor inicial 0.9 y dominio \(0<\alpha<1\). `lambda_terminal` se sigue usando en el modo original. Una corrida usa el mismo modo y parámetros para beta y Chronos-2. El calibrador de T04 solo acepta el original; ajustar el riesgo y su criterio con desarrollo es trabajo de [T07](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/11), sin usar los resultados reservados de marzo.
+
+`candidatos.csv` registra \(J\) esperado, pérdida media, CVaR, puntuación, cuantil y reserva de cada calendario único; `planes_elegidos.csv` conserva el calendario completo seleccionado, incluidas filas con \(x=0\) y horas aún no ejecutadas. Origen, política e identificador enlazan ambos registros. `decisiones.csv` resume el elegido en cada origen y `resumen.json` conserva el modo y parámetros. Las tablas físicas siguen reflejando únicamente la ejecución realizada; al final se usa \(H_{\mathrm{ef}}=\min(H,\text{horas restantes})\).
+
+**Caso manual de aceptación:** con una batería de 1 Wh inicialmente llena, sin generación presente, demanda presente de 0.30 Wh con prioridad 1 y futura de 1 Wh con prioridad 3, se consideran 49 escenarios con 1 Wh de generación futura y uno sin generación. El plan A compromete ambas cargas y obtiene \(E[J]=3.24\), \(\mathrm{CVaR}_{0.9}=0.60\); el plan B compromete solo la futura y obtiene \(E[J]=3.00\), \(\mathrm{CVaR}_{0.9}=0.30\). Con \(\lambda_R=0\) gana A y con \(\lambda_R=1\) gana B (puntuaciones 2.64 y 2.70). Es una comprobación de sensibilidad, no una validación de los parámetros para el caso real.
 
 ## 7. Protocolo experimental y resultados
 
@@ -226,7 +260,7 @@ El resultado principal es la **diferencia pareada B−A** en servicio bajo la mi
 
 **Criterio de éxito del trabajo:** ejecutar ambos métodos de extremo a extremo, respetar la física, mostrar resultados reproducibles y explicar si Chronos-2 aporta o no una mejora bajo estos supuestos. **No** es necesario que Chronos-2 gane.
 
-## 8. Implementación compacta: T01–T05 implementadas
+## 8. Implementación compacta: T01–T06 implementadas
 
 Conservar `data/`, la ingesta/generación existente de `src/` y sus pruebas actuales. T04 añade únicamente el peso terminal compartido a la configuración; los parámetros físicos conservan sus supuestos. No crear API, base de datos, interfaz web, framework de servicios ni abstracciones innecesarias.
 
@@ -249,8 +283,10 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 | **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/3)) | Física corregida por batería, heurística y restricciones verificables | **Completada** |
 | **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completada y verificada en CPU** |
 | **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
+| **T06 — MPC sensible al riesgo** ([#10](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/10)) | Modo CVaR configurable, selección de calendarios y registro reproducible | **Implementada; parámetros sin calibrar** |
+| **T07 — Calibración CVaR** ([#11](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/11)) | Calibrar y validar el riesgo con desarrollo | **Pendiente** |
 
-Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 presentará el experimento final.
+Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 documenta el experimento del MPC original.
 
 ## 9. Entregables y límites
 

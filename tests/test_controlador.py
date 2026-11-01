@@ -119,8 +119,10 @@ def test_anticipacion_cambia_decision_presente_solo_por_sol_futuro():
     assert planes == [[0, 1], [1, 1]]
 
 
-def test_evaluar_escenarios_conserva_calendarios_y_estado_inicial(monkeypatch):
+@pytest.mark.parametrize("modo", ["original", "cvar"])
+def test_evaluar_escenarios_conserva_calendarios_y_estado_inicial(monkeypatch, modo):
     caso = _caso()
+    caso.configuracion.update(modo_mpc=modo, lambda_riesgo=1.)
     real = controlador.simular
     candidatos, evaluaciones = [], []
 
@@ -141,7 +143,7 @@ def test_evaluar_escenarios_conserva_calendarios_y_estado_inicial(monkeypatch):
     controlador.planificar_mpc(caso.demanda, caso.calendario, _cuantiles([0., 1000.]),
                               np.array([[0., 0.], [0., 1000.], [0., 0.]]),
                               caso.configuracion, estado_inicial={"b": 1.})
-    assert len(candidatos) == 4
+    assert len(candidatos) == (4 if modo == "original" else 12)
     distintos = {tuple(candidato.x) for candidato in candidatos}
     assert {tuple(plan.x) for plan, _ in evaluaciones} == distintos
     for calendario in distintos:
@@ -151,8 +153,10 @@ def test_evaluar_escenarios_conserva_calendarios_y_estado_inicial(monkeypatch):
         assert any(plan.equals(candidato) for candidato in candidatos)
 
 
-def test_ejecucion_continua_estado_real_y_trunca_ultimo_horizonte(monkeypatch):
+@pytest.mark.parametrize("modo", ["original", "cvar"])
+def test_ejecucion_continua_estado_real_y_trunca_ultimo_horizonte(monkeypatch, modo):
     caso = _caso(real=(0., 1000., 0.), prioridades=(1, 1, 1))
+    caso.configuracion.update(modo_mpc=modo, lambda_riesgo=1.)
     real = controlador.planificar_mpc
     estados, horizontes = [], []
 
@@ -177,11 +181,26 @@ def test_ejecucion_continua_estado_real_y_trunca_ultimo_horizonte(monkeypatch):
     assert resultado["resumen"]["J"] == 2.
     assert resultado["resumen"]["S_pond"] == pytest.approx(2 / 3)
     assert len(resultado["decisiones"]) == len(resultado["pronosticos"]) == 3
+    planes = resultado["planes_elegidos"]
+    assert planes.groupby("origen_utc").size().tolist() == [2, 2, 1]
+    assert planes.groupby("t").size().to_dict() == {0: 1, 1: 2, 2: 2}
+    candidatos = resultado["candidatos"]
+    assert not candidatos.duplicated(["origen_utc", "candidato_id"]).any()
+    assert candidatos.groupby("origen_utc").elegido.sum().eq(1).all()
+    for decision in resultado["decisiones"].to_dict("records"):
+        elegido = candidatos.loc[candidatos.origen_utc.eq(decision["origen_utc"]) & candidatos.elegido].iloc[0]
+        assert elegido.candidato_id == decision["candidato_id"]
+        assert elegido.modo_mpc == modo
+        assert elegido.alpha_cvar == .9
+        assert elegido.lambda_riesgo == (1. if modo == "cvar" else 0.)
+    assert controlador._verificar_fisica(resultado, caso.configuracion)["violaciones_fisicas"] == 0
 
 
-def test_proveedores_identicos_son_pareados_y_terminal_no_es_J():
+@pytest.mark.parametrize("modo", ["original", "cvar"])
+def test_proveedores_identicos_son_pareados_y_terminal_no_es_J(modo):
     caso = _caso(real=(1000., 1000.), prioridades=(1, 1))
     caso.configuracion["lambda_terminal"] = 0.75
+    caso.configuracion.update(modo_mpc=modo, lambda_riesgo=1.)
 
     def pronosticar(historia, origen, horizonte):
         return _cuantiles([1000.] * horizonte, origen)
@@ -189,16 +208,19 @@ def test_proveedores_identicos_son_pareados_y_terminal_no_es_J():
     resultados = [controlador.ejecutar_mpc(
         caso, pronosticar, inicio=ORIGEN, fin=ORIGEN + pd.Timedelta(hours=2),
     ) for _ in range(2)]
-    for nombre in ("cargas", "horas", "baterias", "decisiones"):
+    for nombre in ("cargas", "horas", "baterias", "decisiones", "candidatos", "planes_elegidos"):
         pd.testing.assert_frame_equal(resultados[0][nombre], resultados[1][nombre])
     assert resultados[0]["resumen"]["J"] == 2.
     assert resultados[0]["resumen"]["S_pond"] == 1.
     assert resultados[0]["estado_final"] == {"b": 1.}
-    assert (resultados[0]["decisiones"].score > 0).all()
+    decisiones = resultados[0]["decisiones"]
+    assert decisiones.score.tolist() == ([2.75, 1.75] if modo == "original" else [2., 1.])
 
 
-def test_realizacion_futura_no_cambia_primera_decision():
+@pytest.mark.parametrize("modo", ["original", "cvar"])
+def test_realizacion_futura_no_cambia_primera_decision(modo):
     caso = _caso(real=(0., 0.), prioridades=(1, 3))
+    caso.configuracion.update(modo_mpc=modo, lambda_riesgo=1.)
     alterado = deepcopy(caso)
     alterado.irradiancia_simulacion.loc[1, "ghi_w_m2"] = 1000.
     alterado.irradiancia_historica.loc[
@@ -218,3 +240,83 @@ def test_realizacion_futura_no_cambia_primera_decision():
                                    resultados[1]["decisiones"].iloc[0])
     pd.testing.assert_frame_equal(resultados[0]["cargas"].query("t == 0"),
                                   resultados[1]["cargas"].query("t == 0"))
+
+
+@pytest.mark.parametrize("perdidas,alpha,esperado", [
+    ([0., 0., 0.], .9, 0.),
+    ([3.] * 50, .9, 3.),
+    ([0.] * 49 + [3.], .9, .6),
+    ([0.] * 49 + [3.], .95, 1.2),
+    ([5., 5., 1., 0.], .5, 5.),
+    ([10., 9., 0., 0.], .625, 14.5 / 1.5),
+    ([100.], .9, 100.),
+])
+def test_cvar_empirico_con_cola_fraccionaria_y_empates(perdidas, alpha, esperado):
+    assert controlador.calcular_cvar(perdidas, alpha) == pytest.approx(esperado)
+
+
+@pytest.mark.parametrize("perdidas", [[], [[1., 2.]], [-1., 0.], [np.inf], [np.nan]])
+def test_cvar_rechaza_perdidas_invalidas(perdidas):
+    with pytest.raises(ValueError, match="CVaR"):
+        controlador.calcular_cvar(perdidas, .9)
+
+
+@pytest.mark.parametrize("alpha", [True, 0., 1., -.1, np.nan, np.inf])
+def test_cvar_rechaza_alpha_invalido(alpha):
+    with pytest.raises(ValueError, match="alpha_cvar"):
+        controlador.calcular_cvar([1., 2.], alpha)
+
+
+@pytest.mark.parametrize("peso,compromisos", [(0., [1, 1]), (1., [0, 1])])
+def test_riesgo_cambia_plan_en_caso_manual_de_cincuenta_escenarios(peso, compromisos):
+    caso = _caso()
+    caso.configuracion.update(modo_mpc="cvar", lambda_riesgo=peso, escenarios=50, lambda_terminal=10.)
+    caso.demanda.loc[0, "demanda_wh"] = .30
+    escenarios = np.tile([0., 1000.], (50, 1))
+    escenarios[-1, 1] = 0.
+    entradas = deepcopy((caso.demanda, caso.configuracion, escenarios))
+    resultado = controlador.planificar_mpc(
+        caso.demanda, caso.calendario, _cuantiles([0., 1000.]), escenarios, caso.configuracion)
+    assert resultado["compromisos"].x.tolist() == compromisos
+    tabla = resultado["puntuaciones"]
+    assert len(resultado["planes"]) == len(tabla) == 2
+    assert tabla.reserva.tolist() == [0., .75]
+    assert tabla.cuantil.tolist() == [.1, .1]
+    assert tabla.candidato_id.tolist() == [0, 1]
+    np.testing.assert_allclose(tabla.J_esperado, [3.24, 3.])
+    np.testing.assert_allclose(tabla.perdida_media, [.06, .30])
+    np.testing.assert_allclose(tabla.CVaR, [.60, .30])
+    np.testing.assert_allclose(tabla.score, tabla.J_esperado - peso * tabla.CVaR)
+    assert tabla.loc[tabla.elegido, "candidato_id"].tolist() == [resultado["candidato_id"]]
+    pd.testing.assert_frame_equal(caso.demanda, entradas[0])
+    assert caso.configuracion == entradas[1]
+    np.testing.assert_array_equal(escenarios, entradas[2])
+
+
+def test_mismo_rho_diferentes_cuantiles_se_registra_el_ganador_correcto():
+    caso = _caso()
+    caso.configuracion.update(modo_mpc="cvar", lambda_riesgo=0.)
+    cuantiles = _cuantiles([0., 1000.])
+    cuantiles.loc[cuantiles.index[1], .1] = 0.
+    prediccion = dict(corregidos=cuantiles, escenarios=np.tile([0., 1000.], (3, 1)))
+    reloj = controlador._calendario_utc(caso.calendario)
+    resultado, decision = controlador._ejecutar_bloque(
+        caso, reloj, ORIGEN, ORIGEN + pd.Timedelta(hours=2), prediccion, {"b": 1.}, caso.configuracion)
+    assert decision["reserva"] == 0. and decision["cuantil"] == .5
+    assert decision["J_esperado"] == 4.
+    elegido = resultado["candidatos"].loc[lambda tabla: tabla.elegido].iloc[0]
+    assert elegido.cuantil == decision["cuantil"]
+    assert resultado["planes_elegidos"].x.tolist() == [1, 1]
+
+
+def test_empate_favorece_menor_reserva_y_despues_menor_cuantil():
+    caso = _caso()
+    caso.configuracion.update(modo_mpc="cvar", lambda_riesgo=0.)
+    cuantiles = _cuantiles([0., 1000.])
+    escenarios = np.array([[0., 1000.], [0., 1000.], [0., 0.]])
+    resultado = controlador.planificar_mpc(
+        caso.demanda, caso.calendario, cuantiles, escenarios, caso.configuracion)
+    np.testing.assert_allclose(resultado["puntuaciones"].score, [3., 3.])
+    assert resultado["reserva"] == 0.
+    assert resultado["compromisos"].x.tolist() == [1, 1]
+    assert resultado["puntuaciones"].loc[lambda tabla: tabla.elegido, "cuantil"].tolist() == [.1]

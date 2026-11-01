@@ -209,6 +209,21 @@ def _validar_control(config):
     for campo in ("semilla", "semilla_escenarios"):
         numero(config[campo], campo, entero=True)
     numero(config["lambda_terminal"], "lambda_terminal")
+    parametros_mpc(config)
+
+
+def parametros_mpc(config):
+    """Modo y parámetros efectivos de selección; no modifica la configuración recibida."""
+    modo = config.get("modo_mpc", "original")
+    if modo not in ("original", "cvar"):
+        raise ValueError("modo_mpc: debe ser 'original' o 'cvar'")
+    alpha = numero(config.get("alpha_cvar", 0.90), "alpha_cvar", maximo=1, estricto=True)
+    if alpha == 1:
+        raise ValueError("alpha_cvar: debe ser menor que 1")
+    peso = 0
+    if modo == "cvar" or "lambda_riesgo" in config:
+        peso = numero(config.get("lambda_riesgo"), "lambda_riesgo")
+    return modo, alpha, peso if modo == "cvar" else 0
 
 
 def _validar_pv(pv):

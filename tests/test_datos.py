@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from src import cargar_caso, historial_admisible
-from src.configuracion import cargar_configuracion
+from src.configuracion import cargar_configuracion, parametros_mpc
 
 RAIZ = Path(__file__).resolve().parents[1]
 CONFIG = RAIZ / "scripts/configuracion.json"
@@ -106,6 +106,45 @@ def test_configuraciones_invalidas(configuracion, ruta_campo, valor):
     ruta.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
     with pytest.raises(ValueError, match="configuracion.json"):
         cargar_configuracion(ruta)
+
+
+@pytest.mark.parametrize("campos,campo", [
+    ({"modo_mpc": "otro"}, "modo_mpc"),
+    ({"modo_mpc": None}, "modo_mpc"),
+    ({"modo_mpc": True}, "modo_mpc"),
+    ({"modo_mpc": []}, "modo_mpc"),
+    ({"modo_mpc": "cvar"}, "lambda_riesgo"),
+    *[({"alpha_cvar": valor}, "alpha_cvar")
+      for valor in (0, 1, -0.1, True, float("inf"), float("nan"), "0.9")],
+    *[({"modo_mpc": "cvar", "lambda_riesgo": valor}, "lambda_riesgo")
+      for valor in (-1, True, None, float("inf"), float("nan"))],
+    ({"modo_mpc": "original", "lambda_riesgo": -1}, "lambda_riesgo"),
+])
+def test_configuracion_rechaza_riesgo_invalido(configuracion, campos, campo):
+    config, ruta = configuracion
+    config.update(campos)
+    ruta.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(ValueError, match=campo):
+        cargar_configuracion(ruta)
+
+
+@pytest.mark.parametrize("modo,peso,alpha", [("cvar", 0, 0.9), ("cvar", 1.5, 0.95),
+                                            ("original", 2, 0.9)])
+def test_configuracion_mpc_y_parametros_efectivos(configuracion, modo, peso, alpha):
+    config, ruta = configuracion
+    config.update(modo_mpc=modo, lambda_riesgo=peso)
+    if alpha != 0.9:
+        config["alpha_cvar"] = alpha
+    ruta.write_text(json.dumps(config), encoding="utf-8")
+    leida = cargar_configuracion(ruta)
+    assert parametros_mpc(leida) == (modo, alpha, peso if modo == "cvar" else 0)
+    assert leida == config
+
+
+def test_mpc_original_por_omision_no_modifica_configuracion():
+    config = {}
+    assert parametros_mpc(config) == ("original", 0.9, 0)
+    assert config == {}
 
 
 @pytest.mark.parametrize("archivo,campo,valor", [

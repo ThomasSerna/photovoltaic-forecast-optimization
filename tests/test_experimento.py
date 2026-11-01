@@ -102,11 +102,13 @@ def test_diferencias_diarias_por_fecha_local():
         dias=2, media=1.5, mediana=1.5, minimo=0., maximo=3., dias_b_mayor=1, dias_iguales=1, dias_b_menor=0)
 
 
-def test_proveedores_identicos_dan_ramas_identicas_y_pareadas():
+@pytest.mark.parametrize("modo", ["original", "cvar"])
+def test_proveedores_identicos_dan_ramas_identicas_y_pareadas(modo):
     caso = _evaluable(real=(0., 1000., 0.), prioridades=(1, 1, 1))
+    caso.configuracion.update(modo_mpc=modo, lambda_riesgo=1.)
     evaluacion = experimento.evaluar(caso, {nombre: _constante(1000.) for nombre in experimento.POLITICAS})
     a, b = (evaluacion["resultados"][nombre] for nombre in experimento.POLITICAS)
-    for tabla in ("cargas", "horas", "baterias", "decisiones"):
+    for tabla in ("cargas", "horas", "baterias", "decisiones", "candidatos", "planes_elegidos"):
         pd.testing.assert_frame_equal(a[tabla], b[tabla])
     assert evaluacion["pareo"] == dict(origenes=3, filtraciones=0, entradas_comunes=True)
     assert all(f["violaciones_fisicas"] == 0 for f in evaluacion["fisica"].values())
@@ -185,10 +187,28 @@ def test_reproducibilidad_detecta_un_pronosticador_inestable():
         experimento.verificar_reproducibilidad(caso, pronosticadores, evaluacion)
 
 
-@pytest.fixture
-def comando(tmp_path, monkeypatch):
+@pytest.mark.parametrize("tabla", ["candidatos", "planes_elegidos"])
+def test_reproducibilidad_detecta_cambios_en_el_plan_completo(tabla):
+    caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
+    caso.configuracion.update(modo_mpc="cvar", lambda_riesgo=1.)
+    pronosticadores = {nombre: _constante(0.) for nombre in experimento.POLITICAS}
+    evaluacion = experimento.evaluar(caso, pronosticadores)
+    registro = evaluacion["resultados"]["beta"][tabla]
+    if tabla == "candidatos":
+        registro.loc[0, "score"] += 1.
+    else:
+        # La segunda hora del primer plan todavía no se había ejecutado.
+        registro.loc[1, "x"] = 1 - registro.loc[1, "x"]
+    with pytest.raises(ValueError, match=f"reproducibilidad: beta cambia {tabla}"):
+        experimento.verificar_reproducibilidad(caso, pronosticadores, evaluacion)
+
+
+@pytest.fixture(params=[{}, dict(modo_mpc="cvar", alpha_cvar=0.90, lambda_riesgo=1., lambda_terminal=17.)],
+                ids=["original", "cvar"])
+def comando(tmp_path, monkeypatch, request):
     """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
+    caso.configuracion.update(request.param)
     caso.configuracion["semilla"] = 20261018
     caso.configuracion["pronosticos"].update(revision="a" * 40, dispositivo="cpu")
     config = tmp_path / "config.json"
@@ -207,11 +227,30 @@ def test_comando_exporta_tabla_graficas_y_registro_sin_tocar_entradas(comando):
     config, salida, original = comando
     experimento.main()
     assert config.read_bytes() == original
-    for nombre in ("cargas", "horas", "baterias", "decisiones", "pronosticos", "diario", "tabla_ab"):
+    for nombre in ("cargas", "horas", "baterias", "decisiones", "candidatos", "planes_elegidos",
+                   "pronosticos", "diario", "tabla_ab"):
         assert (salida / f"{nombre}.csv").stat().st_size > 0
     for nombre in ("irradiancia", "demanda_atendida", "baterias", "diferencias_diarias"):
         assert (salida / "figuras" / f"{nombre}.png").stat().st_size > 0
     informe = json.loads((salida / "resumen.json").read_text(encoding="utf-8"))
+    configuracion = json.loads(original)
+    modo = configuracion.get("modo_mpc", "original")
+    assert informe["control"] == dict(horizonte=2, replanificacion=1, escenarios=3,
+                                      lambda_terminal=0., modo_mpc=modo, alpha_cvar=0.90,
+                                      lambda_riesgo=1. if modo == "cvar" else 0.)
+    assert informe["configuracion"] == configuracion
+    candidatos = pd.read_csv(salida / "candidatos.csv")
+    planes = pd.read_csv(salida / "planes_elegidos.csv")
+    decisiones = pd.read_csv(salida / "decisiones.csv")
+    claves = ["politica", "origen_utc", "candidato_id"]
+    assert not candidatos.duplicated(claves).any()
+    assert candidatos.groupby(["politica", "origen_utc"])["elegido"].sum().eq(1).all()
+    assert {"cuantil", "reserva", "J_esperado", "perdida_media", "CVaR", "score"} <= set(candidatos)
+    ganadores = candidatos.loc[candidatos["elegido"]]
+    pd.testing.assert_frame_equal(decisiones[claves], ganadores[claves].reset_index(drop=True))
+    assert planes.groupby("politica").size().to_dict() == {"beta": 3, "chronos": 3}
+    assert planes["x"].eq(0).any()
+    assert planes.merge(ganadores[claves], on=claves, validate="many_to_one", indicator=True)["_merge"].eq("both").all()
     verificaciones = informe["verificaciones"]
     assert {f["violaciones_fisicas"] for f in verificaciones["fisica"].values()} == {0}
     assert verificaciones["pareo"]["filtraciones"] == 0 and verificaciones["reproducibilidad"]["coincide"]

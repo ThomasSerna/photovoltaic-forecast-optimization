@@ -16,6 +16,18 @@ from src.simulador import simular
 from test_controlador import ORIGEN, _caso, _cuantiles
 
 
+def test_calibracion_cvar_se_rechaza_antes_de_cargar_el_modelo(monkeypatch):
+    caso = _caso()
+    caso.configuracion.update(modo_mpc="cvar", lambda_riesgo=1.)
+
+    def no_cargar(*args, **kwargs):
+        raise AssertionError("No debe cargar Chronos para calibrar CVaR en T04")
+
+    monkeypatch.setattr(controlador, "cargar_chronos", no_cargar)
+    with pytest.raises(ValueError, match="T07"):
+        controlador.calibrar_mpc(caso)
+
+
 @pytest.mark.parametrize("empate,peso_esperado", [(False, 0.75), (True, 0.)])
 def test_calibracion_reutiliza_pronosticos_y_conserva_ocho_estados(
         monkeypatch, empate, peso_esperado):
@@ -175,6 +187,22 @@ def publicacion(tmp_path, monkeypatch):
     monkeypatch.setattr(importlib.metadata, "version", lambda paquete: "prueba")
     monkeypatch.setattr(sys, "argv", ["controlador", "--config", str(config), "--salida", str(salida)])
     return caso, config, salida, original
+
+
+def test_cli_calibracion_cvar_no_crea_salida(publicacion, monkeypatch, capsys):
+    caso, config, salida, original = publicacion
+    caso.configuracion.update(modo_mpc="cvar", lambda_riesgo=1.)
+
+    def no_calibrar(*args, **kwargs):
+        raise AssertionError("No debe iniciar la calibración de CVaR en T04")
+
+    monkeypatch.setattr(controlador, "calibrar_mpc", no_calibrar)
+    with pytest.raises(SystemExit) as error:
+        controlador.main()
+    assert error.value.code == 1
+    assert "T07" in capsys.readouterr().err
+    assert not salida.exists()
+    assert config.read_bytes() == original
 
 
 @pytest.mark.parametrize("fallo", [

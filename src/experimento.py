@@ -13,6 +13,7 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
+from .configuracion import parametros_mpc
 from .controlador import _periodo, _verificar_fisica, ejecutar_mpc
 from .pronosticos import mascara_noche
 from .simulador import PRIORIDAD_CRITICA, simular
@@ -147,6 +148,13 @@ def verificar_reproducibilidad(caso, pronosticadores, evaluacion):
             if diferencia > TOLERANCIA_WH:
                 raise ValueError(f"reproducibilidad: {nombre} cambia {tabla} en {diferencia:g} Wh")
             max_wh = max(max_wh, diferencia)
+        for tabla in ("decisiones", "candidatos", "planes_elegidos"):
+            uno, otro = (r[tabla].loc[r[tabla]["origen_utc"].isin(origenes)].reset_index(drop=True)
+                         for r in (original, repeticion))
+            try:
+                pd.testing.assert_frame_equal(uno, otro, check_exact=False, rtol=0, atol=TOLERANCIA_WH)
+            except AssertionError as error:
+                raise ValueError(f"reproducibilidad: {nombre} cambia {tabla} al repetirse") from error
         for p, q in zip(original["pronosticos"], repeticion["pronosticos"]):
             if p["origen_utc"] not in origenes:
                 continue
@@ -317,7 +325,7 @@ SUPUESTOS = [
     "ERA5 es reanálisis, no sensor local; available_at = fin del intervalo es una idealización",
     "beta2 por hora local (loc=0, escala=1.05×máximo positivo) y Chronos-2 zero-shot con la misma historia de 336 h",
     "escenarios con bloques y rangos comunes por origen; no garantizan calibración conjunta",
-    "MPC heurístico de T04 con lambda_terminal calibrado en desarrollo; sin garantía de optimalidad",
+    "MPC original de T04 con valor terminal o ampliación CVaR de T06 sin término terminal; sin garantía de optimalidad",
     "con calendario fijo no se encienden cargas no comprometidas (z ≤ x): un pronóstico pesimista reduce el servicio",
     "referencia reactiva: heurística T03 con la GHI realizada de cada hora; información perfecta de la hora, no admisible",
     "28 días y una sola realización meteorológica: resultados exploratorios, sin pruebas de significancia",
@@ -503,8 +511,9 @@ def exportar(salida, caso, evaluacion, resumen, tabla):
     for nombre in ("cargas", "horas", "baterias"):
         pd.concat([r[nombre].assign(politica=p) for p, r in resultados.items()], ignore_index=True).to_csv(
             salida / f"{nombre}.csv", index=False)
-    pd.concat([resultados[p]["decisiones"].assign(politica=p) for p in POLITICAS], ignore_index=True).to_csv(
-        salida / "decisiones.csv", index=False)
+    for nombre in ("decisiones", "candidatos", "planes_elegidos"):
+        pd.concat([resultados[p][nombre].assign(politica=p) for p in POLITICAS], ignore_index=True).to_csv(
+            salida / f"{nombre}.csv", index=False)
     pd.concat([resumen["pronosticos"][p].assign(proveedor=p) for p in POLITICAS], ignore_index=True).to_csv(
         salida / "pronosticos.csv", index=False)
     resumen["diario"].to_csv(salida / "diario.csv", index=False)
@@ -563,6 +572,7 @@ def main():
         versiones = entorno()
         for paquete in ("numpy", "scipy", "chronos-forecasting", "torch", "transformers", "astral", "matplotlib"):
             versiones[paquete] = importlib.metadata.version(paquete)
+        modo, alpha, peso_riesgo = parametros_mpc(config)
         informe = dict(
             alcance="T05: evaluación pareada A/B en el periodo reservado; resultados exploratorios",
             hipotesis="Chronos-2 puede reducir el error de irradiancia y mejorar la demanda ponderada "
@@ -571,7 +581,9 @@ def main():
             periodo_local=config["periodos"]["evaluacion"],
             estado_inicial={b["id"]: b["inicial_wh"] for b in config["baterias"]},
             semillas={"demanda": config["semilla"], "escenarios": config["semilla_escenarios"]},
-            control={c: config[c] for c in ("horizonte", "replanificacion", "escenarios", "lambda_terminal")},
+            control=dict({c: config[c] for c in ("horizonte", "replanificacion", "escenarios")},
+                         lambda_terminal=config["lambda_terminal"] if modo == "original" else 0.,
+                         modo_mpc=modo, alpha_cvar=alpha, lambda_riesgo=peso_riesgo),
             tiempos=dict(evaluacion["tiempos"], carga_chronos_s=carga_s, total_s=duracion),
             verificaciones=dict(fisica=evaluacion["fisica"], pareo=evaluacion["pareo"],
                                 reproducibilidad=reproducibilidad),

@@ -15,13 +15,19 @@ predictivo heurístico (MPC). Cada método recibe 336 horas de historia, pronost
 parámetros y estado inicial; después conservan sus propios estados de batería.
 La calibración usa enero y la evaluación reservada, del 3 al 30 de marzo de 2025.
 
+El controlador ofrece el modo original y un modo sensible al riesgo mediante
+CVaR, usado con cualquiera de los dos pronosticadores. El modo original es el
+predeterminado. El modo CVaR penaliza la demanda no atendida y ponderada por
+prioridad en los peores escenarios; sus parámetros aún no están calibrados.
+
 El MPC y el caso de Támesis son adaptaciones del proyecto; no constituyen una
 reproducción numérica del caso del artículo. El [protocolo](docs/IDEA.md) detalla
 estas diferencias y [docs/datos.md](docs/datos.md) describe datos y unidades.
 
 ## Resultados
 
-Evaluación en CPU sobre **28 días, 672 horas y 112 orígenes por método**:
+Evaluación T05 con el **MPC original**, en CPU sobre **28 días, 672 horas y 112
+orígenes por método**:
 
 | Indicador | Beta | Chronos-2 |
 |---|---:|---:|
@@ -60,6 +66,38 @@ valida los datos; el segundo compara los métodos y exporta tablas, CSV, figuras
 y `resumen.json`. La carpeta de salida debe ser nueva. La primera inferencia
 descarga los pesos públicos de Chronos-2; no requiere claves de API y funciona
 en CPU. Los datos del caso ya están incluidos.
+
+### Usar el modo sensible al riesgo
+
+Copie `scripts/configuracion.json` en `scripts/configuracion_cvar.json` y añada
+estos campos **en la raíz** de la copia, conservando los demás:
+
+```json
+"modo_mpc": "cvar",
+"alpha_cvar": 0.9,
+"lambda_riesgo": 1.0
+```
+
+`alpha_cvar` es opcional, por defecto 0,9, y debe estar entre 0 y 1 sin incluir
+los extremos. `lambda_riesgo` es obligatorio en modo CVaR, finito y no
+negativo; el valor 1 del ejemplo es **ilustrativo, no calibrado**. Con 50
+escenarios, α = 0,9 considera los cinco de mayor pérdida. `lambda_terminal`
+conserva su uso en el modo original y no interviene en la puntuación CVaR.
+
+La copia debe quedar en `scripts/`: las rutas de datos se resuelven respecto
+a la carpeta del JSON. Para ejecutar ambos pronosticadores con el mismo modo:
+
+```powershell
+uv run --locked --extra pronosticos python -m src.experimento --config scripts/configuracion_cvar.json --salida results/evaluacion_cvar
+```
+
+Este comando usa el periodo reservado de marzo. No use esos resultados para
+elegir o ajustar los parámetros: su calibración con datos de desarrollo está
+pendiente en T07. `candidatos.csv` registra las métricas por calendario único y
+`planes_elegidos.csv` el calendario completo seleccionado en cada origen;
+`decisiones.csv` y `resumen.json` registran las decisiones y la configuración.
+El [protocolo](docs/IDEA.md#62-modo-sensible-al-riesgo-t06) explica el cálculo
+y sus límites.
 
 ## Ejecutar las pruebas
 

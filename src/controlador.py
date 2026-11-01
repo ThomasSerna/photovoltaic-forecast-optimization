@@ -9,7 +9,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from .configuracion import numero
+from .configuracion import numero, parametros_mpc
 from .pronosticos import (
     cargar_chronos, contexto_admisible, corregir_cuantiles, pronosticar_beta,
     pronosticar_chronos, validar_cuantiles,
@@ -88,11 +88,26 @@ def _calendario_utc(calendario):
     return tabla
 
 
+def calcular_cvar(perdidas, alpha):
+    """Media de la peor masa 1-alpha, incluida la fracción del escenario frontera."""
+    numero(alpha, "alpha_cvar", maximo=1, estricto=True)
+    if alpha == 1:
+        raise ValueError("alpha_cvar: debe ser menor que 1")
+    perdidas = np.asarray(perdidas, dtype=float)
+    if (perdidas.ndim != 1 or not len(perdidas)
+            or not np.isfinite(perdidas).all() or (perdidas < 0).any()):
+        raise ValueError("CVaR: se requieren pérdidas finitas, no negativas y no vacías")
+    masa = len(perdidas) * (1 - alpha)
+    pesos = np.clip(masa - np.arange(len(perdidas)), 0, 1)
+    return math.fsum(np.sort(perdidas)[::-1] * pesos) / masa
+
+
 def planificar_mpc(demanda, calendario, cuantiles, escenarios, configuracion, *, estado_inicial=None):
-    """Propone cuatro calendarios y evalúa cada plan fijo en todos los escenarios.
+    """Propone calendarios y evalúa cada plan fijo en todos los escenarios.
 
     No recibe irradiancia realizada. Empates de score conservan la menor reserva.
     """
+    modo, alpha, peso_riesgo = parametros_mpc(configuracion)
     horizonte = len(cuantiles)
     numero(horizonte, "horizonte MPC", minimo=1, maximo=24, entero=True)
     _validar_cuantiles_horarios(cuantiles, cuantiles.index[0], horizonte,
@@ -112,29 +127,41 @@ def planificar_mpc(demanda, calendario, cuantiles, escenarios, configuracion, *,
     estado = _estado_inicial(configuracion["baterias"], estado_inicial)
     planes, filas, evaluados = [], [], {}
     for reserva in RESERVAS:
-        candidato = simular(demanda, solar, configuracion, estado_inicial=estado, reserva=reserva)
-        plan = candidato["cargas"][["t", "carga_id", "x"]].copy()
-        planes.append(plan)
-        clave = plan["x"].to_numpy().tobytes()
-        # Reservas distintas pueden proponer exactamente el mismo calendario.
-        if clave not in evaluados:
-            beneficios, terminales = [], []
-            for trayectoria in escenarios:
-                resultado = simular(demanda, solar.assign(ghi_w_m2=trayectoria), configuracion,
-                                    estado_inicial=estado, compromisos=plan)
-                beneficios.append(resultado["resumen"]["J"])
-                terminales.append(math.fsum(
-                    b["eficiencia_descarga"] * (resultado["estado_final"][b["id"]] - b["minimo_wh"])
-                    for b in configuracion["baterias"]))
-            evaluados[clave] = (math.fsum(beneficios) / len(beneficios),
-                                math.fsum(terminales) / len(terminales))
-        beneficio, terminal = evaluados[clave]
-        filas.append(dict(reserva=reserva, J_esperado=beneficio, terminal_wh=terminal,
-                          score=beneficio + peso * terminal))
+        for cuantil in ((0.5,) if modo == "original" else (0.1, 0.5, 0.9)):
+            candidato = simular(demanda, solar.assign(ghi_w_m2=cuantiles[cuantil].to_numpy()),
+                                configuracion, estado_inicial=estado, reserva=reserva)
+            plan = candidato["cargas"][["t", "carga_id", "x"]].copy()
+            clave = plan["x"].to_numpy().tobytes()
+            if modo == "cvar" and clave in evaluados:
+                continue
+            planes.append(plan)
+            # Cuantiles y reservas distintos pueden proponer el mismo calendario.
+            if clave not in evaluados:
+                beneficios, terminales, perdidas = [], [], []
+                for trayectoria in escenarios:
+                    resultado = simular(demanda, solar.assign(ghi_w_m2=trayectoria), configuracion,
+                                        estado_inicial=estado, compromisos=plan)
+                    beneficios.append(resultado["resumen"]["J"])
+                    cargas = resultado["cargas"]
+                    perdidas.append(math.fsum(cargas.prioridad_supuesta * cargas.no_atendida_wh))
+                    terminales.append(math.fsum(
+                        b["eficiencia_descarga"] * (resultado["estado_final"][b["id"]] - b["minimo_wh"])
+                        for b in configuracion["baterias"]))
+                evaluados[clave] = dict(
+                    candidato_id=len(evaluados), J_esperado=math.fsum(beneficios) / len(beneficios),
+                    terminal_wh=math.fsum(terminales) / len(terminales),
+                    perdida_media=math.fsum(perdidas) / len(perdidas), CVaR=calcular_cvar(perdidas, alpha))
+            estadisticas = evaluados[clave]
+            score = (estadisticas["J_esperado"] - peso_riesgo * estadisticas["CVaR"] if modo == "cvar"
+                     else estadisticas["J_esperado"] + peso * estadisticas["terminal_wh"])
+            filas.append(dict(**estadisticas, reserva=reserva, cuantil=cuantil, score=score,
+                              modo_mpc=modo, alpha_cvar=alpha, lambda_riesgo=peso_riesgo))
     puntuaciones = pd.DataFrame(filas)
     elegido = int(puntuaciones["score"].idxmax())
+    puntuaciones["elegido"] = puntuaciones.index == elegido
     return dict(compromisos=planes[elegido], puntuaciones=puntuaciones,
-                reserva=RESERVAS[elegido], planes=planes)
+                reserva=filas[elegido]["reserva"], planes=planes,
+                candidato_id=filas[elegido]["candidato_id"])
 
 
 def _periodo(caso, inicio, fin):
@@ -181,14 +208,19 @@ def _ejecutar_bloque(caso, reloj, origen, fin, prediccion, estado, configuracion
             raise ValueError("realización: fechas y t no coinciden con el calendario")
     resultado = simular(demanda, solar, configuracion, estado_inicial=estado,
                         compromisos=plan["compromisos"].loc[plan["compromisos"]["t"].isin(ejecutadas)])
-    fila = plan["puntuaciones"].loc[plan["puntuaciones"].reserva.eq(plan["reserva"])].iloc[0].to_dict()
+    candidatos = plan["puntuaciones"].drop_duplicates("candidato_id").copy()
+    candidatos["elegido"] = candidatos.candidato_id.eq(plan["candidato_id"])
+    resultado["candidatos"] = candidatos.assign(origen_utc=origen, horizonte=len(indices))
+    resultado["planes_elegidos"] = plan["compromisos"].assign(
+        origen_utc=origen, candidato_id=plan["candidato_id"])
+    fila = candidatos.loc[candidatos.candidato_id.eq(plan["candidato_id"])].iloc[0].to_dict()
     fila.update(origen_utc=origen, horas_ejecutadas=len(ejecutadas))
     return resultado, fila
 
 
 def _unir_resultados(resultados, decisiones, pronosticos):
     tablas = {nombre: pd.concat([r[nombre] for r in resultados], ignore_index=True)
-              for nombre in ("cargas", "horas", "baterias")}
+              for nombre in ("cargas", "horas", "baterias", "candidatos", "planes_elegidos")}
     resumen = {campo: math.fsum(r["resumen"][campo] for r in resultados)
                for campo in resultados[0]["resumen"] if campo != "S_pond"}
     cargas = tablas["cargas"]
@@ -206,6 +238,7 @@ def ejecutar_mpc(caso, pronosticar, *, inicio, fin, estado_inicial=None):
     """
     origen, fin, reloj = _periodo(caso, inicio, fin)
     config = caso.configuracion
+    parametros_mpc(config)
     estado = _estado_inicial(config["baterias"], estado_inicial)
     resultados, decisiones, pronosticos = [], [], []
     while origen < fin:
@@ -305,8 +338,10 @@ def calibrar_mpc(caso, pipeline=None):
     Reutiliza los pronósticos de cada origen entre pesos. Cada combinación de
     proveedor y peso conserva su estado independiente, sin consultar evaluación.
     """
-    inicio, fin, reloj = _periodo(caso, CALIBRACION_INICIO, CALIBRACION_FIN)
     config = caso.configuracion
+    if parametros_mpc(config)[0] != "original":
+        raise ValueError("calibración: T04 solo calibra el modo original; CVaR corresponde a T07")
+    inicio, fin, reloj = _periodo(caso, CALIBRACION_INICIO, CALIBRACION_FIN)
     desarrollo = config["periodos"]["desarrollo"]
     if inicio < pd.Timestamp(desarrollo["inicio"]) or fin > pd.Timestamp(desarrollo["fin"]):
         raise ValueError("calibración: el ensayo debe permanecer dentro de desarrollo")
@@ -363,6 +398,8 @@ def main():
     args = parser.parse_args()
     try:
         caso = cargar_caso(args.config)
+        if parametros_mpc(caso.configuracion)[0] != "original":
+            raise ValueError("calibración: T04 solo calibra el modo original; CVaR corresponde a T07")
         salida = args.salida.resolve()
         if salida == args.config.resolve() or salida in [p.resolve() for p in caso.rutas.values()]:
             raise ValueError("salida: no puede reemplazar una entrada")
