@@ -4,6 +4,7 @@ La reserva genera compromisos; su evaluación y ejecución conservan la física
 de T03. El artículo original no usa este MPC ni su puntuación esperada.
 """
 
+import hashlib
 import math
 
 import numpy as np
@@ -14,12 +15,17 @@ from .pronosticos import (
     cargar_chronos, contexto_admisible, corregir_cuantiles, pronosticar_beta,
     pronosticar_chronos, validar_cuantiles,
 )
-from .simulador import _estado_inicial, simular
+from .simulador import PRIORIDAD_CRITICA, _estado_inicial, simular
 
 RESERVAS = (0., 0.25, 0.5, 0.75)
 PESOS_TERMINALES = (0., 0.25, 0.5, 0.75)
 CALIBRACION_INICIO = "2025-01-06T00:00:00-05:00"
 CALIBRACION_FIN = "2025-01-13T00:00:00-05:00"
+RIESGO_INICIO = "2025-01-06T00:00:00-05:00"
+RIESGO_CORTE = "2025-02-17T00:00:00-05:00"
+RIESGO_FIN = "2025-03-03T00:00:00-05:00"
+PESOS_RIESGO = (0., 0.25, 0.5, 1., 2.)
+ALPHA_RIESGO = 0.9
 
 
 def _validar_cuantiles_horarios(tabla, origen, horizonte, cuantiles):
@@ -102,12 +108,9 @@ def calcular_cvar(perdidas, alpha):
     return math.fsum(np.sort(perdidas)[::-1] * pesos) / masa
 
 
-def planificar_mpc(demanda, calendario, cuantiles, escenarios, configuracion, *, estado_inicial=None):
-    """Propone calendarios y evalúa cada plan fijo en todos los escenarios.
-
-    No recibe irradiancia realizada. Empates de score conservan la menor reserva.
-    """
-    modo, alpha, peso_riesgo = parametros_mpc(configuracion)
+def _evaluar_candidatos(demanda, calendario, cuantiles, escenarios, configuracion, *, estado_inicial=None):
+    """Estadísticas de planes fijos; independientes del peso de su puntuación."""
+    modo, alpha, _ = parametros_mpc(configuracion)
     horizonte = len(cuantiles)
     numero(horizonte, "horizonte MPC", minimo=1, maximo=24, entero=True)
     _validar_cuantiles_horarios(cuantiles, cuantiles.index[0], horizonte,
@@ -119,7 +122,7 @@ def planificar_mpc(demanda, calendario, cuantiles, escenarios, configuracion, *,
     if (escenarios.shape != (configuracion["escenarios"], horizonte)
             or not np.isfinite(escenarios).all() or (escenarios < 0).any()):
         raise ValueError("escenarios: se requiere una matriz finita y no negativa N×H")
-    peso = numero(configuracion["lambda_terminal"], "lambda_terminal")
+    numero(configuracion["lambda_terminal"], "lambda_terminal")
     reloj = _calendario_utc(calendario).set_index("inicio_utc").reindex(cuantiles.index)
     if reloj["t"].isna().any():
         raise ValueError("calendario: faltan horas del pronóstico")
@@ -138,30 +141,48 @@ def planificar_mpc(demanda, calendario, cuantiles, escenarios, configuracion, *,
             # Cuantiles y reservas distintos pueden proponer el mismo calendario.
             if clave not in evaluados:
                 beneficios, terminales, perdidas = [], [], []
+                trayectorias_evaluadas = {}
                 for trayectoria in escenarios:
-                    resultado = simular(demanda, solar.assign(ghi_w_m2=trayectoria), configuracion,
-                                        estado_inicial=estado, compromisos=plan)
-                    beneficios.append(resultado["resumen"]["J"])
-                    cargas = resultado["cargas"]
-                    perdidas.append(math.fsum(cargas.prioridad_supuesta * cargas.no_atendida_wh))
-                    terminales.append(math.fsum(
-                        b["eficiencia_descarga"] * (resultado["estado_final"][b["id"]] - b["minimo_wh"])
-                        for b in configuracion["baterias"]))
+                    huella = trayectoria.tobytes()
+                    if huella not in trayectorias_evaluadas:
+                        resultado = simular(demanda, solar.assign(ghi_w_m2=trayectoria), configuracion,
+                                            estado_inicial=estado, compromisos=plan)
+                        cargas = resultado["cargas"]
+                        trayectorias_evaluadas[huella] = (
+                            resultado["resumen"]["J"], math.fsum(cargas.prioridad_supuesta * cargas.no_atendida_wh),
+                            math.fsum(b["eficiencia_descarga"] * (resultado["estado_final"][b["id"]] - b["minimo_wh"])
+                                      for b in configuracion["baterias"]))
+                    beneficio, perdida, terminal = trayectorias_evaluadas[huella]
+                    beneficios.append(beneficio)
+                    perdidas.append(perdida)
+                    terminales.append(terminal)
                 evaluados[clave] = dict(
                     candidato_id=len(evaluados), J_esperado=math.fsum(beneficios) / len(beneficios),
                     terminal_wh=math.fsum(terminales) / len(terminales),
                     perdida_media=math.fsum(perdidas) / len(perdidas), CVaR=calcular_cvar(perdidas, alpha))
             estadisticas = evaluados[clave]
-            score = (estadisticas["J_esperado"] - peso_riesgo * estadisticas["CVaR"] if modo == "cvar"
-                     else estadisticas["J_esperado"] + peso * estadisticas["terminal_wh"])
-            filas.append(dict(**estadisticas, reserva=reserva, cuantil=cuantil, score=score,
-                              modo_mpc=modo, alpha_cvar=alpha, lambda_riesgo=peso_riesgo))
-    puntuaciones = pd.DataFrame(filas)
+            filas.append(dict(**estadisticas, reserva=reserva, cuantil=cuantil))
+    return dict(planes=planes, puntuaciones=pd.DataFrame(filas))
+
+
+def _seleccionar_plan(evaluacion, configuracion):
+    modo, alpha, peso_riesgo = parametros_mpc(configuracion)
+    puntuaciones = evaluacion["puntuaciones"].copy()
+    puntuaciones["score"] = (puntuaciones.J_esperado - peso_riesgo * puntuaciones.CVaR if modo == "cvar"
+                             else puntuaciones.J_esperado + configuracion["lambda_terminal"] * puntuaciones.terminal_wh)
+    puntuaciones = puntuaciones.assign(modo_mpc=modo, alpha_cvar=alpha, lambda_riesgo=peso_riesgo)
     elegido = int(puntuaciones["score"].idxmax())
     puntuaciones["elegido"] = puntuaciones.index == elegido
-    return dict(compromisos=planes[elegido], puntuaciones=puntuaciones,
-                reserva=filas[elegido]["reserva"], planes=planes,
-                candidato_id=filas[elegido]["candidato_id"])
+    return dict(compromisos=evaluacion["planes"][elegido], puntuaciones=puntuaciones,
+                reserva=float(puntuaciones.loc[elegido, "reserva"]), planes=evaluacion["planes"],
+                candidato_id=int(puntuaciones.loc[elegido, "candidato_id"]))
+
+
+def planificar_mpc(demanda, calendario, cuantiles, escenarios, configuracion, *, estado_inicial=None):
+    """Propone y elige sin irradiancia realizada; empates por reserva y cuantil."""
+    evaluacion = _evaluar_candidatos(demanda, calendario, cuantiles, escenarios, configuracion,
+                                    estado_inicial=estado_inicial)
+    return _seleccionar_plan(evaluacion, configuracion)
 
 
 def _periodo(caso, inicio, fin):
@@ -190,12 +211,13 @@ def _predecir(caso, pronosticar, origen, horizonte):
     return dict(crudos=crudos, corregidos=corregidos, correcciones=diagnostico, **muestreo)
 
 
-def _ejecutar_bloque(caso, reloj, origen, fin, prediccion, estado, configuracion):
+def _ejecutar_bloque(caso, reloj, origen, fin, prediccion, estado, configuracion, *, evaluacion=None):
     indices = prediccion["corregidos"].index
     ventana = reloj.loc[reloj.inicio_utc.isin(indices)]
     demanda = caso.demanda.loc[caso.demanda["t"].isin(ventana["t"])]
-    plan = planificar_mpc(demanda, ventana, prediccion["corregidos"], prediccion["escenarios"],
-                          configuracion, estado_inicial=estado)
+    plan = (_seleccionar_plan(evaluacion, configuracion) if evaluacion is not None else
+            planificar_mpc(demanda, ventana, prediccion["corregidos"], prediccion["escenarios"],
+                           configuracion, estado_inicial=estado))
     hasta = min(fin, origen + pd.Timedelta(hours=configuracion["replanificacion"]))
     ejecutadas = ventana.loc[ventana.inicio_utc.lt(hasta), "t"]
     demanda = demanda.loc[demanda["t"].isin(ejecutadas)]
@@ -380,6 +402,279 @@ def calibrar_mpc(caso, pipeline=None):
                 inicio_utc=inicio, fin_utc=fin)
 
 
+def _diario_riesgo(resultado, reloj, zona):
+    """Pérdidas realizadas en Wh·p y servicio crítico por día local."""
+    cargas = resultado["cargas"].copy()
+    fechas = reloj.set_index("t").inicio_utc.dt.tz_convert(zona).dt.strftime("%Y-%m-%d")
+    cargas["fecha"] = cargas.t.map(fechas)
+    cargas["J"] = cargas.prioridad_supuesta * cargas.atendida_wh
+    cargas["perdida"] = cargas.prioridad_supuesta * cargas.no_atendida_wh
+    cargas["solicitada_ponderada"] = cargas.prioridad_supuesta * cargas.demanda_wh
+    criticas = cargas.prioridad_supuesta.ge(PRIORIDAD_CRITICA)
+    cargas["solicitada_critica_wh"] = cargas.demanda_wh.where(criticas, 0.)
+    cargas["atendida_critica_wh"] = cargas.atendida_wh.where(criticas, 0.)
+    campos = ["J", "perdida", "solicitada_ponderada", "solicitada_critica_wh", "atendida_critica_wh"]
+    return cargas.groupby("fecha", sort=True)[campos].sum().reset_index()
+
+
+def _resumir_riesgo(diario):
+    filas = []
+    for (proveedor, modo, peso), grupo in diario.groupby(["proveedor", "modo_mpc", "lambda_riesgo"], sort=True):
+        totales = {c: math.fsum(grupo[c]) for c in
+                   ("J", "perdida", "solicitada_ponderada", "solicitada_critica_wh", "atendida_critica_wh")}
+        filas.append(dict(proveedor=proveedor, modo_mpc=modo, lambda_riesgo=peso, **totales,
+                          S_pond=totales["J"] / totales["solicitada_ponderada"] if totales["solicitada_ponderada"] else None,
+                          servicio_critico=totales["atendida_critica_wh"] / totales["solicitada_critica_wh"]
+                          if totales["solicitada_critica_wh"] else None,
+                          CVaR_diario=calcular_cvar(grupo.perdida, ALPHA_RIESGO), dias=len(grupo)))
+    return pd.DataFrame(filas)
+
+
+def _seleccionar_riesgo(tabla):
+    cvar = tabla.loc[tabla.modo_mpc.eq("cvar")]
+    referencia = cvar.loc[cvar.lambda_riesgo.eq(0)].set_index("proveedor").J
+    filas = []
+    for peso, grupo in cvar.groupby("lambda_riesgo", sort=True):
+        if set(grupo.proveedor) != {"beta", "chronos"} or len(grupo) != 2:
+            raise ValueError("calibración: se requieren beta y Chronos por peso")
+        elegible = all(f.J >= .99 * referencia[f.proveedor] for f in grupo.itertuples())
+        filas.append(dict(lambda_riesgo=peso, elegible=elegible,
+                          J_medio=math.fsum(grupo.J) / 2, CVaR_diario_medio=math.fsum(grupo.CVaR_diario) / 2))
+    seleccion = pd.DataFrame(filas)
+    admisibles = seleccion.loc[seleccion.elegible].sort_values(
+        ["CVaR_diario_medio", "J_medio", "lambda_riesgo"], ascending=[True, False, True])
+    if admisibles.empty:
+        raise ValueError("calibración: falta una referencia de peso cero admisible")
+    return float(admisibles.iloc[0].lambda_riesgo), seleccion
+
+
+def _validar_riesgo(tabla, elegido):
+    cvar = tabla.loc[tabla.modo_mpc.eq("cvar")]
+    referencia = cvar.loc[cvar.lambda_riesgo.eq(0)].set_index("proveedor")
+    seleccionado = cvar.loc[cvar.lambda_riesgo.eq(elegido)].set_index("proveedor")
+    servicio = all(seleccionado.loc[n, "J"] >= .99 * referencia.loc[n, "J"] for n in ("beta", "chronos"))
+    cola = math.fsum(seleccionado.CVaR_diario) <= math.fsum(referencia.CVaR_diario)
+    return dict(servicio_admisible=bool(servicio), cola_no_empeora=bool(cola), recomendado=bool(servicio and cola))
+
+
+def calibrar_riesgo_mpc(caso, pipeline=None):
+    """T07: selecciona con seis semanas y valida dos, sin tocar entradas ni marzo."""
+    config = caso.configuracion
+    inicio, fin, reloj = _periodo(caso, RIESGO_INICIO, RIESGO_FIN)
+    corte = pd.Timestamp(RIESGO_CORTE).tz_convert("UTC")
+    desarrollo = config["periodos"]["desarrollo"]
+    paso = pd.Timedelta(hours=config["replanificacion"])
+    if (not inicio < corte < fin or (corte - inicio) % paso or (fin - inicio) % paso
+            or inicio < pd.Timestamp(desarrollo["inicio"]) or fin > pd.Timestamp(desarrollo["fin"])):
+        raise ValueError("calibración: ajuste y validación deben ser bloques de desarrollo alineados con R")
+    if pipeline is None:
+        opciones = config["pronosticos"]
+        pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
+    pronosticadores = proveedores(caso, pipeline)
+    if set(pronosticadores) != {"beta", "chronos"}:
+        raise ValueError("calibración: se requieren los dos proveedores beta y Chronos")
+    claves = [(n, modo, peso) for n in pronosticadores
+              for modo, pesos in (("cvar", PESOS_RIESGO), ("original", (0.,))) for peso in pesos]
+    estados = {clave: _estado_inicial(config["baterias"], None) for clave in claves}
+    fisica = {clave: dict(max_error_bus_wh=0., max_error_bateria_wh=0., violaciones_fisicas=0) for clave in claves}
+    pronosticos = {n: [] for n in pronosticadores}
+    diarios, decisiones, candidatos, muestras, fronteras = [], [], [], [], []
+    seleccionado, seleccion, ajuste = None, None, None
+    evaluaciones, reutilizadas = 0, 0
+    for origen in pd.date_range(inicio, fin, freq=paso, inclusive="left"):
+        fase = "ajuste" if origen < corte else "validacion"
+        if origen == corte:
+            acumulado = pd.concat(diarios, ignore_index=True).groupby(
+                ["fase", "proveedor", "modo_mpc", "lambda_riesgo", "fecha"], as_index=False).sum()
+            ajuste = _resumir_riesgo(acumulado.loc[acumulado.fase.eq("ajuste")])
+            seleccionado, seleccion = _seleccionar_riesgo(ajuste)
+            fronteras = [dict(proveedor=n, modo_mpc=m, lambda_riesgo=p, estado=estados[(n, m, p)].copy())
+                         for n, m, p in claves]
+            claves = [c for c in claves if c[1] == "original" or c[2] in {0., seleccionado}]
+        horizonte = min(config["horizonte"], int((fin - origen) / pd.Timedelta(hours=1)))
+        predicciones = {}
+        for nombre, pronosticar in pronosticadores.items():
+            historia = contexto_admisible(caso.irradiancia_historica, origen, config["pronosticos"]["contexto"])
+            if (historia.available_at.gt(origen) | historia.fin_utc.gt(origen)).any():
+                raise ValueError("filtración: contexto futuro en calibración")
+            prediccion = _predecir(caso, pronosticar, origen, horizonte)
+            if (prediccion["bloques"] + pd.Timedelta(hours=24) > origen).any():
+                raise ValueError("filtración: bloque futuro en calibración")
+            pronosticos[nombre].append(dict(
+                origen_utc=origen, contexto_fin_utc=historia.fin_utc.iloc[-1],
+                contexto_sha256=hashlib.sha256(historia.ghi_w_m2.to_numpy(dtype=float).tobytes()).hexdigest(),
+                **prediccion))
+            predicciones[nombre] = prediccion
+            cache = {}
+            for clave in [c for c in claves if c[0] == nombre]:
+                _, modo, peso = clave
+                control = dict(config, modo_mpc=modo, alpha_cvar=ALPHA_RIESGO, lambda_riesgo=peso)
+                estado = estados[clave]
+                # La caché vive solo en este proveedor/origen y exige estados idénticos.
+                huella = (modo, tuple(sorted(estado.items())))
+                if huella not in cache:
+                    ventana = reloj.loc[reloj.inicio_utc.isin(prediccion["corregidos"].index)]
+                    demanda = caso.demanda.loc[caso.demanda.t.isin(ventana.t)]
+                    cache[huella] = _evaluar_candidatos(demanda, ventana, prediccion["corregidos"],
+                                                       prediccion["escenarios"], control, estado_inicial=estado)
+                    evaluaciones += 1
+                else:
+                    reutilizadas += 1
+                resultado, decision = _ejecutar_bloque(caso, reloj, origen, fin, prediccion, estado, control,
+                                                      evaluacion=cache[huella])
+                registrados = resultado["baterias"].groupby("bateria_id").inicial_wh.first().to_dict()
+                if registrados != estado:
+                    raise ValueError("verificación: discontinuidad entre bloques")
+                diagnostico = _verificar_fisica(resultado, control)
+                fisica[clave] = {c: max(fisica[clave][c], diagnostico[c]) for c in diagnostico}
+                estados[clave] = resultado["estado_final"].copy()
+                etiquetas = dict(fase=fase, proveedor=nombre, modo_mpc=modo, lambda_riesgo=peso)
+                diarios.append(_diario_riesgo(resultado, reloj, config["zona_horaria"]).assign(**etiquetas))
+                decisiones.append(dict(**decision, **{c: v for c, v in etiquetas.items() if c not in decision}))
+                candidatos.append(resultado["candidatos"].assign(**etiquetas))
+                if origen < (inicio if fase == "ajuste" else corte) + pd.Timedelta(hours=48):
+                    muestras.append(dict(**etiquetas, origen_utc=origen, estado_inicial=estado.copy(),
+                                         resultado=resultado, decision=decision))
+        a, b = predicciones["beta"], predicciones["chronos"]
+        if (a["semilla"] != b["semilla"] or not a["bloques"].equals(b["bloques"])
+                or not np.array_equal(a["rangos"], b["rangos"])):
+            raise ValueError("pareo: escenarios no comparten bloques y rangos")
+    diario = pd.concat(diarios, ignore_index=True).groupby(
+        ["fase", "proveedor", "modo_mpc", "lambda_riesgo", "fecha"], as_index=False).sum()
+    validacion = _resumir_riesgo(diario.loc[diario.fase.eq("validacion")])
+    veredicto = _validar_riesgo(validacion, seleccionado)
+    muestras = [m for m in muestras if m["modo_mpc"] == "original" or m["lambda_riesgo"] in {0., seleccionado}]
+    return dict(lambda_riesgo=seleccionado, alpha_cvar=ALPHA_RIESGO, inicio_utc=inicio, corte_utc=corte, fin_utc=fin,
+                ajuste=ajuste, validacion=validacion, diario=diario, seleccion=seleccion,
+                decisiones=pd.DataFrame(decisiones), candidatos=pd.concat(candidatos, ignore_index=True),
+                pronosticos=pronosticos, estados_frontera=fronteras, muestras=muestras,
+                fisica=[dict(proveedor=n, modo_mpc=m, lambda_riesgo=p, **d) for (n, m, p), d in fisica.items()],
+                verificaciones=dict(**veredicto, filtraciones=0, escenarios_pareados=True,
+                                    evaluaciones=evaluaciones, reutilizadas=reutilizadas), **veredicto)
+
+
+def verificar_repeticion_riesgo(caso, pipeline, ensayo):
+    """Repite orígenes con historia real y compara los bloques iniciales de cada fase."""
+    pronosticadores = proveedores(caso, pipeline)
+    predicciones, evaluaciones, max_error = {}, {}, 0.
+    _, _, reloj = _periodo(caso, ensayo["inicio_utc"], ensayo["fin_utc"])
+    por_origen = {(n, p["origen_utc"]): p for n, lista in ensayo["pronosticos"].items() for p in lista}
+    for muestra in ensayo["muestras"]:
+        n, origen = muestra["proveedor"], muestra["origen_utc"]
+        clave = (n, origen)
+        original = por_origen[clave]
+        if clave not in predicciones:
+            predicciones[clave] = _predecir(caso, pronosticadores[n], origen, len(original["crudos"]))
+            if not np.allclose(original["crudos"], predicciones[clave]["crudos"], rtol=1e-5, atol=1e-6):
+                raise ValueError("reproducibilidad: cambiaron cuantiles crudos")
+        control = dict(caso.configuracion, modo_mpc=muestra["modo_mpc"], alpha_cvar=ALPHA_RIESGO,
+                       lambda_riesgo=muestra["lambda_riesgo"])
+        huella = (n, origen, muestra["modo_mpc"], tuple(sorted(muestra["estado_inicial"].items())))
+        if huella not in evaluaciones:
+            prediccion = predicciones[clave]
+            ventana = reloj.loc[reloj.inicio_utc.isin(prediccion["corregidos"].index)]
+            demanda = caso.demanda.loc[caso.demanda.t.isin(ventana.t)]
+            evaluaciones[huella] = _evaluar_candidatos(demanda, ventana, prediccion["corregidos"],
+                                                       prediccion["escenarios"], control,
+                                                       estado_inicial=muestra["estado_inicial"])
+        resultado, decision = _ejecutar_bloque(caso, reloj, origen, ensayo["fin_utc"], predicciones[clave],
+                                              muestra["estado_inicial"], control, evaluacion=evaluaciones[huella])
+        esperado = muestra["resultado"]
+        for tabla in ("cargas", "horas", "baterias", "candidatos", "planes_elegidos"):
+            try:
+                pd.testing.assert_frame_equal(resultado[tabla], esperado[tabla], check_exact=False, rtol=0, atol=1e-6)
+            except AssertionError as error:
+                raise ValueError(f"reproducibilidad: cambió {tabla}") from error
+        try:
+            pd.testing.assert_series_equal(pd.Series(decision), pd.Series(muestra["decision"]),
+                                           check_exact=False, rtol=0, atol=1e-6)
+        except AssertionError as error:
+            raise ValueError("reproducibilidad: cambió la decisión") from error
+        if (set(resultado["estado_final"]) != set(esperado["estado_final"])
+                or any(abs(resultado["estado_final"][b] - esperado["estado_final"][b]) > 1e-6
+                       for b in esperado["estado_final"])):
+            raise ValueError("reproducibilidad: cambió el estado final")
+        max_error = max(max_error, float(np.abs(original["crudos"].to_numpy() - predicciones[clave]["crudos"].to_numpy()).max()))
+    return dict(coincide=True, bloques=len(ensayo["muestras"]), origenes_proveedor=len(predicciones),
+                max_diferencia_cuantiles_w_m2=max_error)
+
+
+def _publicar_riesgo(caso, salida, entradas_antes, codigo_antes):
+    """La configuración de entrada se conserva; resumen.json acredita el éxito."""
+    import importlib.metadata
+    import json
+    import os
+    from pathlib import Path
+    from time import perf_counter
+
+    from .cli import codigo_sha256, entradas_sha256, entorno, sha256_de
+
+    inicio = perf_counter()
+    opciones = caso.configuracion["pronosticos"]
+    pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
+    ensayo = calibrar_riesgo_mpc(caso, pipeline)
+    repeticion = verificar_repeticion_riesgo(caso, pipeline, ensayo)
+    config = dict(caso.configuracion, modo_mpc="cvar", alpha_cvar=ALPHA_RIESGO,
+                  lambda_riesgo=ensayo["lambda_riesgo"])
+    config["datos"] = {}
+    for nombre in caso.configuracion["datos"]:
+        try:
+            config["datos"][nombre] = os.path.relpath(caso.rutas[nombre], salida)
+        except ValueError:
+            config["datos"][nombre] = str(caso.rutas[nombre])  # Windows: datos y salida en unidades distintas.
+    for nombre in ("ajuste", "validacion", "diario", "seleccion", "decisiones", "candidatos"):
+        ensayo[nombre].to_csv(salida / f"{nombre}.csv", index=False)
+    registros = []
+    for nombre, lista in ensayo["pronosticos"].items():
+        for p in lista:
+            registros.append(dict(
+                proveedor=nombre, origen_utc=p["origen_utc"].isoformat(),
+                contexto_fin_utc=p["contexto_fin_utc"].isoformat(), contexto_sha256=p["contexto_sha256"],
+                semilla=p["semilla"], bloques=[f.isoformat() for f in p["bloques"]],
+                correcciones=p["correcciones"], inicio_utc=[f.isoformat() for f in p["crudos"].index],
+                cuantiles=list(p["crudos"].columns), crudos=p["crudos"].to_numpy().tolist(),
+                corregidos=p["corregidos"].to_numpy().tolist()))
+    (salida / "pronosticos.json").write_text(
+        json.dumps(registros, ensure_ascii=False, allow_nan=False) + "\n", encoding="utf-8")
+    (salida / "configuracion_cvar.json").write_text(
+        json.dumps(config, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    versiones = entorno()
+    for paquete in ("numpy", "scipy", "chronos-forecasting", "torch", "astral"):
+        versiones[paquete] = importlib.metadata.version(paquete)
+    tablas = {n: ensayo[n].astype(object).where(ensayo[n].notna(), None).to_dict("records")
+              for n in ("ajuste", "validacion", "seleccion")}
+    informe = dict(
+        alcance="T07: calibración y validación temporal en desarrollo; marzo no interviene",
+        inicio_utc=ensayo["inicio_utc"].isoformat(), corte_utc=ensayo["corte_utc"].isoformat(),
+        fin_utc=ensayo["fin_utc"].isoformat(), alpha_cvar=ALPHA_RIESGO,
+        lambda_riesgo=ensayo["lambda_riesgo"], pesos=list(PESOS_RIESGO), duracion_s=perf_counter() - inicio,
+        criterio="J >= 0.99 J_CVaR0 en cada proveedor; mínimo CVaR diario medio A/B; "
+                 "empate por mayor J medio y menor peso",
+        criterio_validacion="99% de J en cada rama y CVaR diario medio no mayor que CVaR0; sin reajuste",
+        recomendado=ensayo["recomendado"], resultados=tablas,
+        verificaciones=dict(ensayo["verificaciones"], fisica=ensayo["fisica"], reproducibilidad=repeticion),
+        estados_frontera=ensayo["estados_frontera"], configuracion=config,
+        configuracion_entrada=caso.configuracion,
+        semillas={"demanda": caso.configuracion["semilla"], "escenarios": caso.configuracion["semilla_escenarios"]},
+        entradas_sha256=entradas_antes, codigo_sha256=codigo_antes, entorno=versiones,
+        uv_lock_sha256=sha256_de(Path(__file__).resolve().parents[1] / "uv.lock"),
+        archivos_sha256={p.name: sha256_de(p) for p in sorted(salida.iterdir()) if p.is_file()},
+        supuestos=["MPC y CVaR son adaptaciones; no cambian la física ni los pronosticadores",
+                   "pérdida diaria realizada en Wh·p; separada del CVaR interno de escenarios",
+                   "14 días de validación representan 1.4 días efectivos en la cola del 10%",
+                   "peso cero o empate son resultados válidos y no demuestran mejora"],
+    )
+    if codigo_sha256() != codigo_antes or entradas_sha256(caso.rutas) != entradas_antes:
+        raise ValueError("calibración: cambiaron entradas o código durante el ensayo")
+    temporal = salida / "resumen.json.tmp"
+    try:
+        temporal.write_text(json.dumps(informe, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+        temporal.replace(salida / "resumen.json")
+    finally:
+        temporal.unlink(missing_ok=True)
+    return ensayo["lambda_riesgo"]
+
+
 def main():
     """Calibra en desarrollo, verifica y guarda el peso común sin tocar evaluación."""
     import argparse
@@ -394,11 +689,14 @@ def main():
 
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
-    parser.add_argument("--salida", type=Path, default=Path("results/t04_calibracion"))
+    parser.add_argument("--salida", type=Path)
+    parser.add_argument("--modo", choices=("original", "cvar"), default="original")
     args = parser.parse_args()
+    if args.salida is None:
+        args.salida = Path("results/t07_calibracion" if args.modo == "cvar" else "results/t04_calibracion")
     try:
         caso = cargar_caso(args.config)
-        if parametros_mpc(caso.configuracion)[0] != "original":
+        if args.modo == "original" and parametros_mpc(caso.configuracion)[0] != "original":
             raise ValueError("calibración: T04 solo calibra el modo original; CVaR corresponde a T07")
         salida = args.salida.resolve()
         if salida == args.config.resolve() or salida in [p.resolve() for p in caso.rutas.values()]:
@@ -406,6 +704,10 @@ def main():
         salida.mkdir(parents=True, exist_ok=False)
         entradas_antes = entradas_sha256(caso.rutas)
         codigo_antes = codigo_sha256()
+        if args.modo == "cvar":
+            elegido = _publicar_riesgo(caso, salida, entradas_antes, codigo_antes)
+            print(f"{salida}: lambda_riesgo={elegido:g}")
+            return
         inicio = perf_counter()
         ensayo = calibrar_mpc(caso)
         duracion = perf_counter() - inicio

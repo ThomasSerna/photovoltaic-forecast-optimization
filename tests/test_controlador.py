@@ -147,7 +147,7 @@ def test_evaluar_escenarios_conserva_calendarios_y_estado_inicial(monkeypatch, m
     distintos = {tuple(candidato.x) for candidato in candidatos}
     assert {tuple(plan.x) for plan, _ in evaluaciones} == distintos
     for calendario in distintos:
-        assert sum(tuple(plan.x) == calendario for plan, _ in evaluaciones) == 3
+        assert sum(tuple(plan.x) == calendario for plan, _ in evaluaciones) == 2
     for plan, estado in evaluaciones:
         assert estado == {"b": 1.}
         assert any(plan.equals(candidato) for candidato in candidatos)

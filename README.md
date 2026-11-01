@@ -13,7 +13,7 @@ y se comparan ambos pronósticos con el mismo simulador físico y controlador
 predictivo heurístico (MPC). Cada método recibe 336 horas de historia, pronostica
 24 horas y replanifica cada 6 horas con 50 escenarios comunes. Comparten demanda,
 parámetros y estado inicial; después conservan sus propios estados de batería.
-La calibración usa enero y la evaluación reservada, del 3 al 30 de marzo de 2025.
+El modo original se calibró en enero y se evaluó del 3 al 30 de marzo de 2025.
 
 El controlador ofrece el modo original y un modo sensible al riesgo mediante
 CVaR, usado con cualquiera de los dos pronosticadores. El modo original es el
@@ -93,11 +93,39 @@ uv run --locked --extra pronosticos python -m src.experimento --config scripts/c
 
 Este comando usa el periodo reservado de marzo. No use esos resultados para
 elegir o ajustar los parámetros: su calibración con datos de desarrollo está
-pendiente en T07. `candidatos.csv` registra las métricas por calendario único y
+en verificación en T07. `candidatos.csv` registra las métricas por calendario único y
 `planes_elegidos.csv` el calendario completo seleccionado en cada origen;
 `decisiones.csv` y `resumen.json` registran las decisiones y la configuración.
 El [protocolo](docs/IDEA.md#62-modo-sensible-al-riesgo-t06) explica el cálculo
 y sus límites.
+
+### Calibrar el modo CVaR
+
+**T07: implementación en verificación.** El protocolo ajusta un peso común a
+ambos pronosticadores con datos de desarrollo, conserva marzo para la regresión
+del modo original y valida el peso en un periodo posterior de desarrollo. Hasta
+completar las verificaciones no hay una configuración recomendada.
+
+El comando previsto, desde la raíz del repositorio y con una carpeta de salida
+nueva, es:
+
+```powershell
+uv run --locked --extra pronosticos python -m src.controlador --modo cvar --salida results/t07_calibracion
+```
+
+El informe `resumen.json` registrará el criterio, los parámetros, las métricas,
+la validación y las huellas de reproducibilidad. La configuración generada
+`configuracion_cvar.json` quedará junto al informe y mantendrá rutas válidas a
+los datos; la configuración original no se modifica. El archivo se generará
+incluso si la validación falla: consulte en el informe si se recomienda el peso
+antes de usarlo. El [protocolo de T07](docs/IDEA.md#calibración-y-validación-t07-en-verificación)
+detalla los periodos, el criterio y sus límites.
+
+La regresión del modo original, también en verificación, se ejecutará por separado:
+
+```powershell
+uv run --locked --extra pronosticos python -m scripts.verificar_regresion_t07 --salida results/t07_regresion_original
+```
 
 ## Ejecutar las pruebas
 
