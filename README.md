@@ -58,6 +58,12 @@ demuestra una mejora por penalización de riesgo. El modo CVaR con peso cero pue
 diferir del original porque considera más calendarios candidatos. La muestra de
 validación es pequeña: su cola diaria del 10 % equivale a 1,4 días.
 
+En una comparación posterior con Chronos-2 y los mismos pronósticos de marzo,
+el nuevo MPC obtuvo **286 406,57 Wh·p** frente a 286 220,02 Wh·p del original
+(+0,065 %). Los compromisos incumplidos aumentaron de 35 a 45. La mejora de J
+se concentró en dos días y no demuestra un beneficio por aversión al riesgo:
+el peso seleccionado es cero y el nuevo modo considera más candidatos.
+
 ## Ejecutar el experimento
 
 Se necesita [uv](https://docs.astral.sh/uv/getting-started/installation/).
@@ -101,7 +107,7 @@ uv run --locked --extra pronosticos python -m src.experimento --config scripts/c
 
 Para usar el peso calibrado, indique en `--config` el archivo
 `results/t07_calibracion/configuracion_cvar.json` generado por la calibración.
-Este comando usa el periodo reservado de marzo. No use esos resultados para
+Este comando usa el periodo de evaluación de marzo. No use esos resultados para
 elegir o ajustar los parámetros: T07 seleccionó el peso con desarrollo.
 `candidatos.csv` registra las métricas por calendario único y
 `planes_elegidos.csv` el calendario completo seleccionado en cada origen;
@@ -113,7 +119,7 @@ y sus límites.
 
 **T07 completada y verificada en CPU.** El protocolo ajusta un peso común a
 ambos pronosticadores con datos de desarrollo y lo valida en un periodo posterior
-de desarrollo. La campaña usa marzo solo para la regresión del modo original.
+de desarrollo. La campaña T07 utilizó marzo solo para la regresión del modo original.
 
 Para repetir la calibración desde la raíz del repositorio, use una carpeta de
 salida nueva; la campaña registrada tardó 44,1 minutos en CPU:
@@ -140,6 +146,27 @@ uv run --locked --extra pronosticos python -m scripts.verificar_regresion_t07 --
 La regresión requiere el objeto Git `9bc279c7caa2aa81eab10567d48741e93fd10f9f`
 en el historial local. Lee el controlador de esa revisión sin cambiar el
 checkout. El informe generado queda en `results/t07_regresion_original/resumen.json`.
+
+### Comparar los dos controladores con Chronos-2
+
+**Comparación completada y verificada.** Una evaluación posterior a T07 compara
+el MPC original con el modo CVaR calibrado (α = 0,9, λ_R = 0), usando Chronos-2
+del 3 al 30 de marzo de 2025. Los pronósticos de la regresión T05 son idénticos
+en ambas trayectorias; no se carga Chronos ni se reajustan parámetros. Marzo ya
+se había analizado en T05, así que el contraste es exploratorio.
+
+Para repetirla se necesitan los resultados locales de calibración T07 y de la
+regresión original, y una carpeta de salida nueva:
+
+```powershell
+uv run --locked --extra pronosticos python -m scripts.comparar_mpc_chronos --salida results/comparacion_mpc_chronos
+```
+
+La salida incluye las gráficas de servicio diario, diferencias de servicio,
+baterías y resumen de métricas en PNG y SVG, además de los datos y un informe
+para verificarlas. Se generan localmente en `results/comparacion_mpc_chronos/`,
+una carpeta ignorada por Git. El [detalle de resultados](docs/IDEA.md#comparación-posterior-de-los-mpc-con-chronos-2)
+incluye los indicadores y sus límites.
 
 ## Ejecutar las pruebas
 

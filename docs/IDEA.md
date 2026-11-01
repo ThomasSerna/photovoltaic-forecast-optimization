@@ -294,6 +294,32 @@ Para reproducir esta regresión debe estar disponible en el historial Git local 
 
 **Correspondencia con los indicadores del artículo (§4.2).** El artículo mide el *service level* (porcentaje de réplicas en que se cubre la demanda) y el *missing of fulfilment* (porcentaje medio no cubierto). T05 calcula sus análogos sobre la trayectoria realizada: la proporción de horas con demanda atendida por completo y la fracción media no atendida en las horas con déficit. La diferencia está en la base: horas de una sola realización, no réplicas. Los bloques y rangos comunes de A y B cumplen el papel de los números aleatorios comunes que usa el artículo (§3.1) para comparar soluciones. No se compara numéricamente con el caso Volcanes, porque los datos, el sistema y la demanda difieren.
 
+### Comparación posterior de los MPC con Chronos-2
+
+**Comparación completada y verificada:** después de T07 se compararon los dos controladores con Chronos-2 del 3 al 30 de marzo de 2025. Esta evaluación es posterior a la selección del peso y no modifica ni vuelve a ajustar \(\alpha=0.9\) o \(\lambda_R=0\). La campaña T07 descrita arriba no evaluó el modo CVaR en marzo. Como marzo ya fue analizado en T05, la comparación posterior es exploratoria y no constituye una validación independiente nueva.
+
+El diseño reutiliza los 112 pronósticos crudos guardados en `results/t07_regresion_original/` para ejecutar el modo CVaR con la configuración generada por T07; el MPC original se toma de la regresión verificada. Ambas trayectorias usan las mismas fechas, demanda, datos físicos, pronósticos y estado inicial, y luego mantienen estados de batería independientes. La comparación no vuelve a cargar ni ajustar Chronos-2.
+
+```powershell
+uv run --locked --extra pronosticos python -m scripts.comparar_mpc_chronos --salida results/comparacion_mpc_chronos
+```
+
+La salida incluye las figuras `servicio_diario`, `diferencias_servicio`, `baterias` y `resumen_metricas`, en PNG y SVG dentro de `results/comparacion_mpc_chronos/figuras/`; también contiene `diario.csv`, `metricas.csv`, las tablas del recorrido nuevo y `resumen.json`. Estos archivos son locales y regenerables: `results/` está ignorado por Git. Las figuras históricas del artículo permanecen asociadas a T05.
+
+| Indicador | MPC original | MPC nuevo | Diferencia nuevo − original |
+|---|---:|---:|---:|
+| \(J\) realizado (Wh·p) | 286220.023 | 286406.573 | +186.549 |
+| \(S_{\mathrm{pond}}\) (%) | 93.2874 | 93.3482 | +0.0608 puntos porcentuales |
+| Energía no atendida (Wh) | 16352.931 | 16339.657 | −13.275 |
+| CVaR diario de pérdida (Wh·p) | 3949.084 | 3887.228 | −61.855 |
+| Servicio crítico (%) | 100 | 100 | 0 |
+| Nivel de servicio horario (%) | 93.0060 | 93.0060 | 0 |
+| Compromisos incumplidos (carga·h) | 35 | 45 | +10 |
+
+El aumento de \(J\) fue 0.0652 % y se concentró en el 4 y el 5 de marzo (+51.259 y +135.290 Wh·p); en los otros 26 días \(J\) fue igual. El CVaR diario realizado disminuyó 1.57 %, pero las solicitudes desatendidas aumentaron de 229 a 230. La muestra comprende 28 días y la cola al 90 % representa 2.8 días efectivos; estas cifras no prueban significancia ni un beneficio por penalización de riesgo, ya que \(\lambda_R=0\) y el conjunto de candidatos del modo nuevo es más amplio.
+
+La comparación usó 672 horas y 112 orígenes de Chronos-2. Los cuantiles crudos y corregidos coincidieron exactamente; no se detectaron filtraciones ni violaciones físicas, con errores máximos de \(5.69\times10^{-14}\) Wh en el bus y \(2.28\times10^{-13}\) Wh en baterías. Pasaron seis pruebas automatizadas de la comparación. La ejecución tardó 370.6 s sin inferencia de Chronos; este tiempo no es comparable como mejora de velocidad frente a T05. El informe registra hashes de entradas, código y archivos generados.
+
 **Indicadores principales** (calculados sobre ejecución realizada):
 
 | Tipo | Indicador |
