@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado:** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC original y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). T06 incorpora un modo MPC sensible al riesgo; T07 está en implementación y verificación.
+**Estado:** **T01–T07 completadas y verificadas en CPU**. T05 evaluó el MPC original en marzo; T06 añadió el modo CVaR y T07 fijó \(\alpha\) y calibró su peso de riesgo con desarrollo. El borrador del artículo en `docs/articulo.md` presenta los resultados históricos de T05.
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -225,24 +225,53 @@ La configuración acepta `modo_mpc` igual a `original` o `cvar`; si se omite, us
 
 **Ensayo CPU completado:** 28 orígenes por proveedor, 50 escenarios por origen y ocho recorridos de 168 h, en 1266.3 s con pesos en caché. Los cuatro pesos empataron: en beta, \(J=73192.486644\), \(S_{\mathrm{pond}}=0.9540504745\); en Chronos, \(J=73784.143168\), \(S_{\mathrm{pond}}=0.9617626074\). El promedio pareado fue 73488.314906 y el desempate fijó **\(\lambda_T=0\)** en la configuración común. No hubo violaciones físicas; errores máximos observados del bus \(2.8422\times10^{-14}\) Wh y de batería \(2.2738\times10^{-13}\) Wh (cotas redondeadas hacia arriba), menores que \(10^{-6}\) Wh. Se comprobaron los mismos bloques/semillas en A/B, cuantiles finitos, hashes de código y CSV y coherencia de la configuración final. En esa verificación pasaron **260 pruebas** con el entorno bloqueado. Registro local regenerable: `results/t04_calibracion_verificada/resumen.json`. Esto documenta calibración, **no** el backtest de T05 ni una conclusión general sobre la utilidad del término terminal o la superioridad de Chronos.
 
-### Calibración y validación T07 (en verificación)
+### Calibración y validación T07
 
-**Implementación en verificación:** el siguiente es el protocolo acordado; todavía no se presenta un peso validado ni un resultado de la campaña. Las fechas se expresan en `America/Bogota` y los intervalos incluyen el inicio y excluyen el fin.
+**Campaña completada y verificada en CPU.** Las fechas se expresan en `America/Bogota` y los intervalos incluyen el inicio y excluyen el fin.
 
 - **Ajuste:** del 6 de enero al 17 de febrero de 2025. Para ambos proveedores se fija \(\alpha=0.9\) y se prueban los pesos \(\lambda_R\in\{0,0.25,0.5,1,2\}\). En cada origen se reutilizan entre pesos los pronósticos de cada proveedor y los rangos y semillas comunes; cada combinación conserva su propia trayectoria y estados individuales de baterías.
 - **Selección común:** se admite un peso si el \(J\) realizado de cada proveedor alcanza al menos el 99 % del obtenido con \(\lambda_R=0\). Entre los admitidos se minimiza el promedio entre proveedores del CVaR diario de la pérdida **realizada** y ponderada por prioridad. En empate se elige el mayor \(J\) promedio y, si persiste, el menor peso. El peso se elige solo con ajuste y se comparte entre beta y Chronos.
-- **Validación:** del 17 de febrero al 3 de marzo de 2025 se comparan el peso elegido, CVaR con \(\lambda_R=0\) y el modo original. Cada recorrido mantiene sus propios estados continuos. Se respalda el peso si, frente a CVaR con peso cero, cada proveedor conserva al menos el 99 % de \(J\) y el promedio entre proveedores del CVaR diario no empeora. Si no se cumplen ambas condiciones, no se recomienda el peso ni se reajusta con validación.
+- **Validación:** del 17 de febrero al 3 de marzo de 2025 se comparan el peso elegido, CVaR con \(\lambda_R=0\) y el modo original. Cada recorrido continúa con sus propios estados de batería al final del ajuste. Se respalda el peso si, frente a CVaR con peso cero, cada proveedor conserva al menos el 99 % de \(J\) y el promedio entre proveedores del CVaR diario no empeora. Si no se cumplen ambas condiciones, no se recomienda el peso ni se reajusta con validación.
 
 La pérdida diaria suma la demanda no atendida multiplicada por su prioridad, en Wh·p. Su CVaR empírico aplica la fórmula de §6.2 a los días locales realizados: es distinto del CVaR de los 50 escenarios pronosticados que usa el MPC al elegir cada plan. En los 14 días de validación, la cola al 90 % equivale a 1.4 días: el peor completo y el 40 % del segundo. Esta muestra pequeña limita la interpretación y no garantiza protección fuera de muestra. El MPC y esta calibración son adaptaciones del proyecto, no resultados del artículo de Acuña et al.
 
-El procedimiento previsto verifica balances y límites con tolerancia de \(10^{-6}\) Wh, continuidad individual, ausencia de información futura y repetición de las primeras 48 horas; conserva la interfaz y los pesos de los pronosticadores. Marzo se usa exclusivamente para una regresión del modo original contra la versión previa a T06 (`9bc279c7caa2aa81eab10567d48741e93fd10f9f`), con los mismos pronósticos congelados, y no para elegir el peso de riesgo.
+La campaña verifica balances y límites con tolerancia de \(10^{-6}\) Wh, continuidad individual, ausencia de información futura y repetición de las primeras 48 horas de cada fase; conserva la interfaz y los pesos de los pronosticadores. En T07, marzo se utilizó exclusivamente para una regresión del modo original contra la versión previa a T06 (`9bc279c7caa2aa81eab10567d48741e93fd10f9f`), con los mismos pronósticos congelados, y no para elegir o validar el peso de riesgo.
 
 ```powershell
 uv run --locked --extra pronosticos python -m src.controlador --modo cvar --salida results/t07_calibracion
 uv run --locked --extra pronosticos python -m scripts.verificar_regresion_t07 --salida results/t07_regresion_original
 ```
 
-Las carpetas de salida deben ser nuevas. La calibración prevé guardar `resumen.json` y `configuracion_cvar.json` por separado, con rutas a datos válidas sin alterar la configuración original. El informe debe registrar parámetros, periodos, criterios, métricas por proveedor y peso, validación, semillas, versiones y hashes de entradas y código. La configuración se produce aun cuando la validación falle; el informe debe identificar que el peso no se recomienda. Los comandos y resultados están pendientes de verificación.
+Las carpetas de salida deben ser nuevas. La calibración guarda `resumen.json` y `configuracion_cvar.json` por separado, con rutas a datos válidas sin alterar la configuración original. El informe registra parámetros, periodos, criterios, métricas por proveedor y peso, validación, semillas, versiones y hashes de entradas, código y archivos generados. La configuración se produce aun cuando la validación falle; en ese caso el informe indica que el peso no se recomienda.
+
+**Resultado del ajuste (42 días):** los cinco pesos cumplieron el umbral de servicio de ambos proveedores. Las medias de las dos ramas fueron:
+
+| \(\lambda_R\) | \(J\) medio (Wh·p) | CVaR diario medio (Wh·p) |
+|---:|---:|---:|
+| 0 | 447641.358 | 3083.645 |
+| 0.25 | 447367.453 | 3083.645 |
+| 0.5 | 447367.453 | 3083.645 |
+| 1 | 447688.355 | 3103.842 |
+| 2 | 446864.562 | 3126.470 |
+
+Los pesos 0, 0.25 y 0.5 empataron en el menor CVaR diario medio; el mayor \(J\) entre ellos seleccionó **\(\lambda_R=0\)**. Aunque el peso 1 obtuvo un \(J\) medio mayor, su CVaR diario fue más alto y no ganó el criterio principal. El servicio crítico durante el ajuste fue 99.7311 % en todas las trayectorias.
+
+**Validación posterior (14 días):** la tabla compara el modo CVaR seleccionado con el modo original; la pérdida de cola es el CVaR diario realizado, no el riesgo pronosticado por el controlador.
+
+| Proveedor | Modo | \(J\) (Wh·p) | \(S_{\mathrm{pond}}\) | CVaR diario (Wh·p) |
+|---|---|---:|---:|---:|
+| Beta | CVaR, \(\lambda_R=0\) | 150935.735 | 0.9390092330 | 2809.385 |
+| Beta | Original | 150036.190 | 0.9334129375 | 3226.657 |
+| Chronos-2 | CVaR, \(\lambda_R=0\) | 150794.594 | 0.9381311592 | 2910.200 |
+| Chronos-2 | Original | 150012.166 | 0.9332634817 | 3465.659 |
+
+El informe marca el peso como recomendado según la regla prefijada. Como el elegido es cero, la comparación de validación contra CVaR con peso cero es una comparación consigo mismo y cumple la regla por construcción; no demuestra beneficio de una penalización positiva. Frente al modo original, el CVaR diario realizado disminuyó 12.93 % para beta y 16.03 % para Chronos, con aumentos de \(J\) de 0.60 % y 0.52 %, respectivamente. El modo CVaR con peso cero considera más candidatos que el original: esas diferencias no se atribuyen a aversión al riesgo. La atención crítica fue del 100 % en todas las trayectorias de validación.
+
+**Verificación y artefactos:** la campaña tardó 2643.9 s en CPU; registró 448 pronósticos únicos en el recorrido principal (224 orígenes por proveedor), con 920 evaluaciones y 1320 reutilizaciones de candidatos. No hubo violaciones físicas ni filtraciones; los errores máximos observados fueron \(1.14\times10^{-13}\) Wh en el bus y \(2.28\times10^{-13}\) Wh en baterías. La repetición comprendió 64 bloques y 32 pares origen–proveedor: la diferencia máxima de cuantiles fue cero y las tablas y decisiones coincidieron dentro de \(10^{-6}\). Se aprobaron 379 pruebas automatizadas. El registro local regenerable `results/t07_calibracion/` contiene el resumen, la configuración CVaR, pronósticos, selección, métricas de ajuste y validación, diario, decisiones y candidatos; `resumen.json` incluye sus hashes y los de las entradas, el código y `uv.lock`.
+
+**Regresión del modo original verificada en CPU:** `results/t07_regresion_original/resumen.json` registra la comparación de las 672 horas y 112 orígenes por proveedor con el controlador anterior a T06, usando los mismos pronósticos congelados. Coincidieron las tablas físicas y decisiones dentro de la tolerancia de \(10^{-6}\), y los indicadores seleccionados coincidieron con los publicados en T05 según su precisión. La repetición de 30 horas y cinco orígenes dio diferencias máximas de cero; no se detectaron violaciones físicas ni filtraciones. Los mayores errores observados fueron \(1.14\times10^{-13}\) Wh en el bus y \(2.85\times10^{-13}\) Wh en baterías. La ejecución tardó 1284.4 s; el informe conserva semillas, versiones y hashes de entradas, código, guion y salidas. Estos resultados solo verifican el modo original, no calibran ni validan CVaR.
+
+Para reproducir esta regresión debe estar disponible en el historial Git local el objeto `9bc279c7caa2aa81eab10567d48741e93fd10f9f`. El guion lee únicamente el controlador de esa revisión y no modifica el checkout. En la revisión de implementación `d1ca484`, la suite completa aprobó 379 pruebas en 137.74 s.
 
 **Evaluación T05 completada:** `uv run --locked --extra pronosticos python -m src.experimento --salida results/t05_evaluacion` (`src/experimento.py`).
 
@@ -279,7 +308,7 @@ El resultado principal es la **diferencia pareada B−A** en servicio bajo la mi
 
 **Criterio de éxito del trabajo:** ejecutar ambos métodos de extremo a extremo, respetar la física, mostrar resultados reproducibles y explicar si Chronos-2 aporta o no una mejora bajo estos supuestos. **No** es necesario que Chronos-2 gane.
 
-## 8. Implementación compacta: T01–T06 implementadas
+## 8. Implementación compacta: T01–T07 implementadas
 
 Conservar `data/`, la ingesta/generación existente de `src/` y sus pruebas actuales. T04 añade únicamente el peso terminal compartido a la configuración; los parámetros físicos conservan sus supuestos. No crear API, base de datos, interfaz web, framework de servicios ni abstracciones innecesarias.
 
@@ -302,8 +331,8 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 | **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/3)) | Física corregida por batería, heurística y restricciones verificables | **Completada** |
 | **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completada y verificada en CPU** |
 | **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
-| **T06 — MPC sensible al riesgo** ([#10](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/10)) | Modo CVaR configurable, selección de calendarios y registro reproducible | **Implementada; parámetros sin calibrar** |
-| **T07 — Calibración CVaR** ([#11](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/11)) | Calibrar y validar el riesgo con desarrollo | **Implementación en verificación** |
+| **T06 — MPC sensible al riesgo** ([#10](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/10)) | Modo CVaR configurable, selección de calendarios y registro reproducible | **Implementada; calibrada en T07** |
+| **T07 — Calibración CVaR** ([#11](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/11)) | Calibrar y validar el riesgo con desarrollo | **Completada y verificada en CPU** |
 
 Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 documenta el experimento del MPC original.
 
