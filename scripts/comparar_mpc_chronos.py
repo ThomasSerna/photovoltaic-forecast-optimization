@@ -143,7 +143,8 @@ def comparar(caso, informe, anterior, tabla_pronosticos):
                                     pronosticos_identicos=True, max_diferencia_pronostico=max_error))
 
 
-def graficar(carpeta, caso, comparacion):
+def graficar(carpeta, caso, comparacion, *, titulo="Chronos-2 · MPC anterior / nuevo (λ_R=0)",
+             condiciones="Misma demanda, irradiancia y pronósticos"):
     import matplotlib
 
     matplotlib.use("Agg")
@@ -153,7 +154,6 @@ def graficar(carpeta, caso, comparacion):
     carpeta.mkdir(parents=True, exist_ok=True)
     tabla = comparacion["diario"]
     fechas = pd.DatetimeIndex(pd.to_datetime(tabla.fecha))
-    titulo = "Chronos-2 · MPC anterior / nuevo (λ_R=0)"
     rango = f"{fechas.min():%d-%m-%Y} a {fechas.max():%d-%m-%Y}"
 
     def terminar(figura, ejes, nombre, subtitulo, ticks):
@@ -226,12 +226,12 @@ def graficar(carpeta, caso, comparacion):
                        ("servicio_critico", 100, "Servicio crítico (%)"))
         for eje, (campo, factor, etiqueta) in zip(ejes, indicadores, strict=True):
             valores = [comparacion["metricas"][nombre][campo] * factor for nombre in ("anterior", "nuevo")]
-            barras = eje.bar(["Anterior", "Nuevo"], valores, color=list(COLORES.values()), width=.55)
+            barras = eje.bar([ETIQUETAS["anterior"], ETIQUETAS["nuevo"]], valores, color=list(COLORES.values()), width=.55)
             eje.bar_label(barras, labels=[f"{v:.3f}" for v in valores], padding=4, fontsize=10)
             eje.set_ylim(0, max(max(valores) * 1.2, 1.))
             eje.set_title(etiqueta)
             eje.grid(axis="x", visible=False)
-        terminar(figura, ejes, "resumen_metricas", f"Misma demanda, irradiancia y pronósticos; {len(tabla)} días", None)
+        terminar(figura, ejes, "resumen_metricas", f"{condiciones}; {len(tabla)} días", None)
 
 
 def main():

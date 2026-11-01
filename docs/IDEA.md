@@ -320,6 +320,37 @@ El aumento de \(J\) fue 0.0652 % y se concentró en el 4 y el 5 de marzo (+51.25
 
 La comparación usó 672 horas y 112 orígenes de Chronos-2. Los cuantiles crudos y corregidos coincidieron exactamente; no se detectaron filtraciones ni violaciones físicas, con errores máximos de \(5.69\times10^{-14}\) Wh en el bus y \(2.28\times10^{-13}\) Wh en baterías. Pasaron seis pruebas automatizadas de la comparación. La ejecución tardó 370.6 s sin inferencia de Chronos; este tiempo no es comparable como mejora de velocidad frente a T05. El informe registra hashes de entradas, código y archivos generados.
 
+### Comparación de beta sin MPC frente a Chronos con MPC
+
+**Comparación completada y verificada:** en la rama `experimental/beta-comparation` se contrastó una planificación diaria con beta frente a la trayectoria ya calculada de Chronos-2 con el modo CVaR de T07 (\(\alpha=0.9\), \(\lambda_R=0\), horizonte de 24 h y replanificación cada 6 h). Ambas usan las mismas fechas del 3 al 30 de marzo de 2025, demanda, realización solar, sistema físico y estado inicial; después mantienen sus propios estados de batería. La trayectoria de Chronos procede de `results/comparacion_mpc_chronos/` y se verificó mediante sus hashes.
+
+La alternativa beta es una **adaptación** de la selección por frecuencia de [Acuña et al. (2021), §3.1](https://doi.org/10.3390/en14102789). Cada día a las 00:00 locales genera el pronóstico beta existente a partir de 336 h disponibles y construye 50 escenarios. Para cada escenario aplica la heurística física con reserva cero desde el mismo estado inicial de ese día. Dos calendarios se consideran vecinos directos si al menos el 90 % de las cargas tienen el mismo perfil encendido/apagado durante **las 24 horas completas**, no si coincide el 90 % de las celdas. Se elige el calendario con más vecinos directos, incluido él mismo; en empate, el del primer escenario. La vecindad no se cierra transitivamente.
+
+El calendario se fija antes de conocer la irradiancia realizada y se ejecuta durante las 24 h sin replanificación intradía; si falta energía se respeta la física y no se sustituyen compromisos. Por tanto, beta sin MPC no es el MPC de horizonte deslizante ni la referencia reactiva que conoce la irradiancia de la hora. Usa el pronóstico beta de dos parámetros escalado y corregido, la física actual y 50 escenarios fijos sin parada adaptativa; el paper presenta beta de cuatro parámetros para su caso y considera la estabilidad y el número de iteraciones. No es una reproducción literal ni un resultado del caso Volcanes.
+
+La comparación cambia a la vez el pronosticador y la estrategia de control, por lo que cualquier diferencia no puede atribuirse por separado a uno de ellos. Marzo ya fue examinado en T05: el análisis es exploratorio. Para reproducirlo se requiere la trayectoria previa de Chronos y una carpeta de salida nueva:
+
+```powershell
+uv run --locked --extra pronosticos python -m scripts.comparar_beta_sin_mpc --salida results/beta_sin_mpc_final
+```
+
+La salida `results/beta_sin_mpc_final/` contiene tablas físicas de beta, resultados diarios, métricas, un informe y cuatro gráficas en PNG y SVG; es local y regenerable. El `README.md` de esa carpeta reúne los resultados y las gráficas.
+
+| Indicador | Beta sin MPC | Chronos-2 + MPC | Diferencia Chronos − beta |
+|---|---:|---:|---:|
+| \(J\) realizado (Wh·p) | 285762.630 | 286406.573 | +643.943 |
+| \(S_{\mathrm{pond}}\) (%) | 93.1383 | 93.3482 | +0.2099 puntos porcentuales |
+| Energía no atendida (Wh) | 16374.138 | 16339.657 | −34.481 |
+| CVaR diario de pérdida (Wh·p) | 4146.254 | 3887.228 | −259.026 |
+| Servicio crítico (%) | 100 | 100 | 0 |
+| Nivel de servicio horario (%) | 92.8571 | 93.0060 | +0.1488 puntos porcentuales |
+| Compromisos incumplidos (carga·h) | 33 | 45 | +12 |
+| Solicitudes desatendidas (carga·h) | 220 | 230 | +10 |
+
+El aumento de \(J\) de Chronos frente a beta fue 0.2253 %. La diferencia diaria ocurrió solo el 4, 5 y 6 de marzo: +1285.972, −700.874 y +58.845 Wh·p, respectivamente; los otros 25 días tuvieron igual \(J\). El CVaR diario realizado disminuyó 6.2472 %, calculado sobre 28 días cuya cola del 10 % representa 2.8 días efectivos. El mayor número de compromisos incumplidos y solicitudes desatendidas limita la lectura del aumento de \(J\).
+
+La verificación física no detectó violaciones en ninguna trayectoria; los errores máximos fueron \(5.69\times10^{-14}\) Wh en el bus y \(2.28\times10^{-13}\) Wh en baterías. Pasaron diez pruebas relacionadas (cuatro de beta sin MPC y seis de la comparación previa). La ejecución final registró 32.5 s e incluyó solo el nuevo recorrido beta y la reutilización de Chronos; no es una comparación de velocidad entre ambos métodos.
+
 **Indicadores principales** (calculados sobre ejecución realizada):
 
 | Tipo | Indicador |
