@@ -351,6 +351,42 @@ El aumento de \(J\) de Chronos frente a beta fue 0.2253 %. La diferencia diaria 
 
 La verificación física no detectó violaciones en ninguna trayectoria; los errores máximos fueron \(5.69\times10^{-14}\) Wh en el bus y \(2.28\times10^{-13}\) Wh en baterías. Pasaron diez pruebas relacionadas (cuatro de beta sin MPC y seis de la comparación previa). La ejecución final registró 32.5 s e incluyó solo el nuevo recorrido beta y la reutilización de Chronos; no es una comparación de velocidad entre ambos métodos.
 
+### Calibración experimental orientada al servicio
+
+**Repetición completada y verificada:** la campaña seleccionó el peso de riesgo que maximiza el \(J\) realizado, es decir, la demanda atendida ponderada por prioridad. Se compararon dos reglas: maximizar \(J\) de Chronos-2 o maximizar el promedio de \(J\) de beta y Chronos-2. En empate se elige el menor peso. Esta selección cambia el criterio de calibración de T07; durante cada decisión el MPC conserva la puntuación por escenarios de §6.2, con \(\alpha=0.9\) y la rejilla \(\lambda_R\in\{0,0.25,0.5,1,2\}\).
+
+Se reutilizan las trayectorias diarias de ajuste de T07 sin resimularlas. Para estudiar sensibilidad temporal se entrenan ambas reglas en ventanas expansivas de tres, cuatro y cinco semanas desde el 6 de enero de 2025 y se evalúa cada peso elegido durante la semana siguiente. Los estados de cada peso son continuos desde el inicio, sin reiniciar baterías en cada corte. Las seis semanas completas de ajuste finalizan el 17 de febrero y fijan los pesos antes de la comparación de marzo.
+
+Se evalúan en Chronos los pesos seleccionados en la validación de desarrollo del 17 de febrero al 3 de marzo y en marzo. La validación continúa con el estado individual de batería correspondiente al peso al final de las seis semanas; marzo parte de la configuración inicial usada en la comparación anterior. Se reutiliza el peso cero ya calculado y se ejecuta el otro peso seleccionado con pronósticos guardados. Esta comparación solo evalúa las consecuencias en Chronos: no demuestra qué ocurre con beta bajo la regla común. Marzo ya fue examinado y se usa de forma exploratoria, sin volver a elegir parámetros.
+
+```powershell
+uv run --locked --extra pronosticos python -m scripts.calibrar_servicio --salida results/calibracion_servicio_verificada
+```
+
+La salida canónica `results/calibracion_servicio_verificada/` registra las estrategias, cortes temporales, comparaciones y tablas físicas. La repetición verificó los manifiestos, parámetros, fechas y condiciones de las fuentes de marzo antes y después de la ejecución; sus 11 archivos registrados coinciden byte a byte con la primera campaña, conservada en `results/calibracion_servicio/`. La infraestructura, los pronosticadores, los candidatos, los horizontes y la configuración predeterminada no se modificaron; la búsqueda no certifica un óptimo global.
+
+**Pesos seleccionados:** los tres cortes expansivos de ambas reglas eligieron \(\lambda_R=0\). Con las seis semanas completas, el criterio de Chronos también eligió cero por desempate: los pesos 0, 0.25, 0.5 y 1 empataron en su \(J\). La regla común eligió \(\lambda_R=1\): frente a cero, mejoró el promedio de ajuste de ambas ramas en 46.997 Wh·p por una mejora de beta. La evaluación posterior de ese peso se realizó solo con Chronos y no mide su efecto posterior en beta.
+
+En la validación de desarrollo del 17 de febrero al 2 de marzo, ambos pesos produjeron para Chronos \(J=150794.593561\) Wh·p, \(S_{\mathrm{pond}}=0.9381311592\) y atención crítica del 100 %. Los contadores de incumplimientos de la referencia de peso cero no figuran en esa comparación y no se comparan.
+
+**Comparación exploratoria de Chronos en marzo:**
+
+| Indicador | \(\lambda_R=0\) | \(\lambda_R=1\) | Diferencia 1 − 0 |
+|---|---:|---:|---:|
+| \(J\) realizado (Wh·p) | 286406.573 | 286813.424 | +406.852 (+0.1421 %) |
+| \(S_{\mathrm{pond}}\) (%) | 93.3482 | 93.4808 | +0.1326 puntos porcentuales |
+| Energía no atendida (Wh) | 16339.657 | 16482.651 | +142.994 |
+| Servicio crítico (%) | 100 | 100 | 0 |
+| Nivel de servicio horario (%) | 93.0060 | 92.4107 | −0.5952 puntos porcentuales |
+| Compromisos incumplidos (carga·h) | 45 | 12 | −33 |
+| Solicitudes desatendidas (carga·h) | 230 | 238 | +8 |
+| Servicio de prioridad 1 (%) | 69.8616 | 68.1599 | −1.7017 puntos porcentuales |
+| Servicio de prioridad 2 (%) | 92.8662 | 93.8302 | +0.9640 puntos porcentuales |
+
+Con peso 1 aumenta \(J\), pero también aumenta la energía no atendida y disminuye la proporción de horas con servicio completo; se atiende una mayor fracción de prioridad 2 y una menor de prioridad 1. El CVaR diario de pérdida para peso 1 no figura en el informe de esta campaña y no se compara. Frente a beta sin MPC de la comparación anterior, el \(J\) de Chronos con peso 1 es 0.3677 % mayor; esa diferencia también combina cambios de pronosticador y control. No se concluye que exista una mejora general ni que el peso 1 sea óptimo fuera de esta muestra.
+
+El informe canónico registra las verificaciones físicas y hashes de entradas, código, fuentes de marzo y archivos generados. La ejecución verificada tardó 487.7 s sin inferencias nuevas del modelo; no mide una mejora de velocidad. Pasaron 392 pruebas en 142.47 s, incluidas tres de selección, cortes temporales e integridad de fuentes. La rama y los datos usados mantienen el carácter experimental del resultado.
+
 **Indicadores principales** (calculados sobre ejecución realizada):
 
 | Tipo | Indicador |
