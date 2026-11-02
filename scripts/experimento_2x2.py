@@ -3,7 +3,8 @@
 Cruza los proveedores de T05 con los dos modos del MPC, con los parámetros que fijó T07
 (α = 0.9, λ_R = 0). Con ese peso C y D no penalizan el riesgo: eligen el mayor J esperado
 entre más calendarios. Marzo ya orientó esta extensión, así que los resultados son
-exploratorios y no constituyen una validación confirmatoria.
+exploratorios y no constituyen una validación confirmatoria. `--lambda-riesgo` repite el
+cruce con otro peso como sensibilidad: no sustituye el de T07.
 """
 
 import argparse
@@ -30,7 +31,7 @@ from src.pronosticos import cargar_chronos
 
 RAIZ = Path(__file__).resolve().parents[1]
 CELDAS = {"A": ("original", "beta"), "B": ("original", "chronos"), "C": ("cvar", "beta"), "D": ("cvar", "chronos")}
-CVAR_T07 = dict(modo_mpc="cvar", alpha_cvar=ALPHA_RIESGO, lambda_riesgo=0.)  # IDEA §7, calibración T07
+LAMBDA_T07 = 0.  # IDEA §7, calibración T07
 INTERACCION = "(D-C)-(B-A)"
 CONTRASTES = {"C-A": dict(C=1, A=-1), "D-B": dict(D=1, B=-1), "B-A": dict(B=1, A=-1), "D-C": dict(D=1, C=-1),
               INTERACCION: dict(D=1, C=-1, B=-1, A=1)}
@@ -47,11 +48,21 @@ FILAS = (
 ETIQUETAS = {"A": "A — beta, original", "B": "B — Chronos-2, original", "C": "C — beta, CVaR", "D": "D — Chronos-2, CVaR"}
 ETIQUETAS_CONTRASTE = {"C-A": "C − A (beta)", "D-B": "D − B (Chronos-2)", INTERACCION: "(D − C) − (B − A)"}
 ADVERTENCIAS = [
-    "con lambda_R=0, C y D no penalizan el riesgo: la diferencia con A y B mide un conjunto de candidatos más amplio",
     "marzo ya orientó esta extensión: resultados exploratorios, sin validación confirmatoria ni significancia",
     "CVaR diario de 28 días: la cola del 10 % equivale a 2.8 días efectivos de una sola realización",
     "`cuantil` en decisiones.csv no mide uso de las colas: un calendario igual al de la mediana queda como q0.1",
 ]
+
+
+def parametros_cvar(lambda_riesgo=LAMBDA_T07):
+    return dict(modo_mpc="cvar", alpha_cvar=ALPHA_RIESGO, lambda_riesgo=lambda_riesgo)
+
+
+def advertencia_peso(lambda_riesgo):
+    if lambda_riesgo == LAMBDA_T07:
+        return "con lambda_R=0, C y D no penalizan el riesgo: la diferencia con A y B mide un conjunto de candidatos más amplio"
+    return (f"lambda_R={lambda_riesgo:g} no es el peso fijado por T07: sensibilidad exploratoria; "
+            "la diferencia con A y B combina más candidatos y la penalización")
 
 
 # --- 1. Ejecución de las cuatro celdas ---
@@ -68,13 +79,13 @@ def memorizar(pronosticar):
     return envuelto
 
 
-def ejecutar_2x2(caso, pronosticadores, *, inicio=None, fin=None):
+def ejecutar_2x2(caso, pronosticadores, *, inicio=None, fin=None, lambda_riesgo=LAMBDA_T07):
     """Recorre los dos controladores; cada celda conserva sus propios estados de batería."""
     config = caso.configuracion
     if parametros_mpc(config)[0] != "original" or config["lambda_terminal"] != 0:
         raise ValueError("T08: la configuración base debe ser el MPC original con lambda_terminal=0")
     caso_cvar = copy(caso)
-    caso_cvar.configuracion = dict(config, **CVAR_T07)
+    caso_cvar.configuracion = dict(config, **parametros_cvar(lambda_riesgo))
     casos = dict(original=caso, cvar=caso_cvar)
     compartidos = {nombre: memorizar(pronosticadores[nombre]) for nombre in POLITICAS}
     evaluaciones = {modo: evaluar(c, compartidos, inicio=inicio, fin=fin) for modo, c in casos.items()}
@@ -84,8 +95,8 @@ def ejecutar_2x2(caso, pronosticadores, *, inicio=None, fin=None):
 def verificar_entre_modos(original, cvar):
     """Por proveedor, mismas entradas y pronósticos con los dos controladores.
 
-    Con λ_R = λ_T = 0 y el mismo estado inicial, los candidatos de CVaR contienen a los
-    originales y se puntúan igual: en el primer origen su mejor plan no puede ser peor.
+    Con λ_T = 0 y el mismo estado inicial, los candidatos de CVaR contienen a los originales:
+    en el primer origen, su mayor J esperado no puede ser menor, sea cual sea λ_R.
     """
     pareos = {}
     for nombre in POLITICAS:
@@ -96,7 +107,9 @@ def verificar_entre_modos(original, cvar):
             if (not p["crudos"].equals(q["crudos"]) or not p["corregidos"].equals(q["corregidos"])
                     or not np.array_equal(p["escenarios"], q["escenarios"])):
                 raise ValueError(f"pareo: {nombre} cambia de pronóstico en {p['origen_utc'].isoformat()}")
-        if otro["decisiones"]["score"].iloc[0] < uno["decisiones"]["score"].iloc[0] - TOLERANCIA_WH:
+        primer_origen = otro["decisiones"]["origen_utc"].iloc[0]
+        mejor = otro["candidatos"].loc[otro["candidatos"]["origen_utc"].eq(primer_origen), "J_esperado"].max()
+        if mejor < uno["decisiones"]["J_esperado"].iloc[0] - TOLERANCIA_WH:
             raise ValueError(f"pareo: los candidatos CVaR de {nombre} no contienen a los originales")
     if not original["resultados"][REFERENCIA]["cargas"].equals(cvar["resultados"][REFERENCIA]["cargas"]):
         raise ValueError("pareo: la referencia reactiva depende del controlador")
@@ -190,8 +203,11 @@ def resumir_contrastes(tabla, diario, ejecucion):
     return pd.DataFrame(filas)
 
 
-def cotejar_publicadas(metricas, resumenes):
-    """A, B y la referencia reproducen T05; B y D, la comparación posterior a T07 (IDEA §7)."""
+def cotejar_publicadas(metricas, resumenes, lambda_riesgo=LAMBDA_T07):
+    """A, B y la referencia reproducen T05; B y D, la comparación posterior a T07 (IDEA §7).
+
+    D solo tiene cifras publicadas con el peso de T07.
+    """
     original = resumenes["original"]["metricas"]
     valores = dict(
         S_pond_A=(metricas["A"]["S_pond"], .9312263476, 5e-11), S_pond_B=(metricas["B"]["S_pond"], .9328742419, 5e-11),
@@ -199,10 +215,11 @@ def cotejar_publicadas(metricas, resumenes):
         J_reactiva=(original[REFERENCIA]["servicio"]["J"], 285240.845, .0005),
         MAE_diurno_beta=(original["beta"]["pronostico"]["diurno"]["corregido"]["mae_w_m2"], 66.33, .005),
         MAE_diurno_chronos=(original["chronos"]["pronostico"]["diurno"]["corregido"]["mae_w_m2"], 64.20, .005),
-        J_D=(metricas["D"]["J"], 286406.573, .0005),
         CVaR_diario_B=(metricas["B"]["CVaR_diario"], 3949.084, .0005),
-        CVaR_diario_D=(metricas["D"]["CVaR_diario"], 3887.228, .0005),
     )
+    if lambda_riesgo == LAMBDA_T07:
+        valores.update(J_D=(metricas["D"]["J"], 286406.573, .0005),
+                       CVaR_diario_D=(metricas["D"]["CVaR_diario"], 3887.228, .0005))
     filas = {nombre: dict(observado=valor, publicado=esperado, tolerancia=tolerancia,
                           coincide=abs(valor - esperado) <= tolerancia)
              for nombre, (valor, esperado, tolerancia) in valores.items()}
@@ -317,7 +334,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=RAIZ / "scripts/configuracion.json")
     parser.add_argument("--salida", type=Path, default=RAIZ / "results/t08_2x2")
+    parser.add_argument("--lambda-riesgo", type=float, default=LAMBDA_T07)
     args = parser.parse_args()
+    cvar = parametros_cvar(args.lambda_riesgo)
     try:
         caso = cargar_caso(args.config)
         config = caso.configuracion
@@ -331,7 +350,7 @@ def main():
         pipeline = cargar_chronos(opciones["revision"], opciones["dispositivo"])
         carga_s = perf_counter() - inicio
         crudos = proveedores(caso, pipeline)
-        ejecucion = ejecutar_2x2(caso, crudos)
+        ejecucion = ejecutar_2x2(caso, crudos, lambda_riesgo=args.lambda_riesgo)
         evaluaciones = ejecucion["evaluaciones"]
         # La repetición no usa memoria: debe volver a calcular los pronósticos.
         reproducibilidad = {modo: verificar_reproducibilidad(c, crudos, evaluaciones[modo])
@@ -340,7 +359,7 @@ def main():
         resumenes = {modo: resumir(c, evaluaciones[modo]) for modo, c in ejecucion["casos"].items()}
         tablas_ab = {modo: tabla_ab(c, evaluaciones[modo], resumenes[modo]) for modo, c in ejecucion["casos"].items()}
         metricas, diarios = metricas_2x2(ejecucion)
-        publicadas = cotejar_publicadas(metricas, resumenes)
+        publicadas = cotejar_publicadas(metricas, resumenes, lambda_riesgo=args.lambda_riesgo)
         tabla = tabla_2x2(metricas, config)
         diario = diario_2x2(diarios)
         contrastes = resumir_contrastes(tabla, diario, ejecucion)
@@ -356,7 +375,7 @@ def main():
             estado_inicial={b["id"]: b["inicial_wh"] for b in config["baterias"]},
             semillas=dict(demanda=config["semilla"], escenarios=config["semilla_escenarios"]),
             control=dict({c: config[c] for c in ("horizonte", "replanificacion", "escenarios", "lambda_terminal")},
-                         cvar=CVAR_T07),
+                         cvar=cvar),
             tiempos=dict(original=evaluaciones["original"]["tiempos"], cvar=evaluaciones["cvar"]["tiempos"],
                          carga_chronos_s=carga_s, total_s=duracion),
             verificaciones=dict(fisica={m: e["fisica"] for m, e in evaluaciones.items()},
@@ -364,10 +383,10 @@ def main():
                                 entre_modos=ejecucion["entre_modos"], reproducibilidad=reproducibilidad,
                                 publicadas=publicadas),
             metricas=metricas, tabla_2x2=_registros_tabla(tabla), contrastes=_registros_tabla(contrastes),
-            pronosticos=_registros(evaluaciones["original"]), configuracion=config, configuracion_cvar=CVAR_T07,
+            pronosticos=_registros(evaluaciones["original"]), configuracion=config, configuracion_cvar=cvar,
             entradas_sha256=entradas, codigo_sha256=codigo, guion_sha256=guion,
             uv_lock_sha256=sha256_de(RAIZ / "uv.lock"), entorno=versiones,
-            supuestos=[*SUPUESTOS, *ADVERTENCIAS],
+            supuestos=[*SUPUESTOS, advertencia_peso(args.lambda_riesgo), *ADVERTENCIAS],
             archivos_sha256={str(p.relative_to(salida)): sha256_de(p) for p in sorted(salida.rglob("*")) if p.is_file()},
         )
         texto = json.dumps(informe, ensure_ascii=False, indent=2, allow_nan=False) + "\n"

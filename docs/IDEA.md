@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado:** **T01–T08 completadas y verificadas en CPU**. T05 evaluó el MPC original en marzo; T06 añadió el modo CVaR, T07 fijó \(\alpha\) y calibró su peso de riesgo con desarrollo, y T08 cruzó pronósticos y controladores en un experimento exploratorio 2×2. El borrador del artículo en `docs/articulo.md` presenta los resultados de T05 y T08.
+**Estado:** **T01–T08 completadas y verificadas en CPU**. T05 evaluó el MPC original en marzo; T06 añadió el modo CVaR, T07 fijó \(\alpha\) y calibró su peso de riesgo con desarrollo, y T08 cruzó pronósticos y controladores en un experimento exploratorio 2×2, con una sensibilidad posterior a \(\lambda_R\). El borrador del artículo en `docs/articulo.md` presenta los resultados de T05 y T08.
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -331,14 +331,14 @@ La comparación usó 672 horas y 112 orígenes de Chronos-2. Los cuantiles crudo
 | C | Beta | CVaR (\(\alpha=0.9\), \(\lambda_R=0\)) |
 | D | Chronos-2 | CVaR (\(\alpha=0.9\), \(\lambda_R=0\)) |
 
-**Alcance.** Los parámetros son los que fijó T07 con desarrollo; en marzo no se ajusta nada. Con \(\lambda_R=0\) el modo CVaR no penaliza el riesgo: elige el mayor \(J\) esperado entre más calendarios. Por eso C − A y D − B miden el efecto de añadir candidatos con los cuantiles 0.1 y 0.9, no el de la aversión al riesgo. No se prueban pesos positivos en marzo, porque sería ajustar sobre el periodo de prueba; el ajuste de T07 ya mostró que esos pesos empatan o empeoran el CVaR diario. Marzo orientó esta extensión, de modo que la reevaluación es **exploratoria** y no constituye una validación confirmatoria. No hay periodo independiente: `reserva_no_usada` tiene irradiancia, pero la demanda sintética termina el 30 de marzo.
+**Alcance.** Los parámetros son los que fijó T07 con desarrollo; en marzo no se ajusta nada. Con \(\lambda_R=0\) el modo CVaR no penaliza el riesgo: elige el mayor \(J\) esperado entre más calendarios. Por eso C − A y D − B miden el efecto de añadir candidatos con los cuantiles 0.1 y 0.9, no el de la aversión al riesgo. El resultado principal no usa pesos positivos: elegirlos en marzo sería ajustar sobre el periodo de prueba, y el ajuste de T07 mostró que empatan o empeoran el CVaR diario. La sensibilidad posterior de esta sección los contrasta sin elegir parámetros con marzo. Marzo orientó esta extensión, de modo que la reevaluación es **exploratoria** y no constituye una validación confirmatoria. No hay periodo independiente: `reserva_no_usada` tiene irradiancia, pero la demanda sintética termina el 30 de marzo.
 
 ```powershell
 uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --salida results/t08_2x2
 ```
 
 - **Ejecución.** `scripts/experimento_2x2.py` no modifica `src/`: llama dos veces a `experimento.evaluar`, una por modo, con proveedores memorizados. Cada origen tiene una sola inferencia por proveedor, así que A/C y B/D reciben exactamente los mismos cuantiles. Cada celda conserva sus propios estados de batería.
-- **Verificaciones.** Física y pareo de T05 en cada modo; `verificar_pareo` también entre modos; cuantiles crudos, corregidos y escenarios idénticos en A/C y B/D; referencia reactiva igual en ambos pasos; repetición inicial con proveedores sin memoria. Con \(\lambda_R=\lambda_T=0\) y el mismo estado, los candidatos CVaR contienen a los originales, así que en el primer origen la puntuación de C no puede ser menor que la de A, ni la de D que la de B. El comando falla si A, B y la referencia no reproducen las cifras de T05, o si B y D no reproducen la comparación anterior con la precisión publicada.
+- **Verificaciones.** Física y pareo de T05 en cada modo; `verificar_pareo` también entre modos; cuantiles crudos, corregidos y escenarios idénticos en A/C y B/D; referencia reactiva igual en ambos pasos; repetición inicial con proveedores sin memoria. Con \(\lambda_T=0\) y el mismo estado, los candidatos CVaR contienen a los originales, así que en el primer origen el mayor \(J\) esperado de C no puede ser menor que el de A, ni el de D que el de B. El comando falla si A, B y la referencia no reproducen las cifras de T05, o si B y D no reproducen la comparación anterior con la precisión publicada; D solo se coteja con \(\lambda_R=0\).
 - **Indicadores.** Los de `metricas_servicio`, más el CVaR diario de la pérdida realizada, el peor día, los mínimos de batería, el tiempo de control sin inferencia y los calendarios únicos por origen. La columna `cuantil` de `decisiones.csv` no mide el uso de las colas, porque un calendario idéntico al de la mediana se registra como q0.1; se cuentan en cambio las horas ejecutadas con \(x\) distinto.
 - **Contrastes.** C − A, D − B, B − A, D − C y la interacción (D − C) − (B − A) sobre totales. Por día solo se calculan para \(J\) y la pérdida, porque el CVaR no se suma por días. Se describen media, mediana, extremos y días a favor y en contra, sin pruebas de significancia. Hay compensación cuando \(J\) y el CVaR diario suben a la vez o bajan a la vez.
 - **Exportaciones.** `original/` y `cvar/` guardan las salidas de T05 de cada modo. La raíz contiene `tabla_2x2.csv`, `tabla_2x2.md`, `contrastes.csv`, `diario_2x2.csv`, las figuras `contrastes`, `diferencias_diarias` y `compensacion` en PNG y SVG, y `resumen.json` con parámetros, semillas y hashes. No depende de otras carpetas de `results/`.
@@ -364,6 +364,50 @@ El mínimo de `bateria_01` es 480 Wh en las cuatro celdas. El modo ampliado aume
 **Lectura.** Más candidatos no favorecieron a Chronos-2 en esta muestra, pero la inversión depende sobre todo de un día y no prueba que beta sea mejor. Lo que muestra es que el orden entre pronósticos no se sostiene al cambiar el controlador. Ningún contraste entre pares presenta compensación: C − A, D − B y B − A mejoran \(J\) y CVaR, y D − C empeora ambos. Como \(\lambda_R=0\), la reducción del CVaR es un efecto colateral de elegir por \(J\) esperado, no aversión al riesgo. El modo tiene costos: más compromisos incumplidos, porque incumplir no resta en la puntuación; servicio desplazado de la prioridad 1 a la 2 (C − A: −1.71 y +1.40 p.p.; D − B: −0.39 y +0.30 p.p.), y 2.4 a 2.7 veces más tiempo de control. C difiere de A en 13 de 672 horas ejecutadas y D de B en 10; en esas celdas la etiqueta `cuantil` marca q0.1 en 80 y 81 de 112 orígenes, lo que confirma que no mide el uso de las colas. Del 3 de marzo a las 12:00 al 5 de marzo a las 18:00, C y D eligieron en 9 de 10 orígenes un calendario propuesto por q0.9, a menudo con reserva.
 
 **Verificación.** 672 horas y 112 orígenes por celda, sin violaciones físicas ni filtraciones; errores máximos de \(1.14\times10^{-13}\) Wh en el bus y \(2.85\times10^{-13}\) Wh en baterías. Los 112 orígenes de cada proveedor tuvieron cuantiles y escenarios idénticos entre modos. La repetición de 30 horas y cinco orígenes dio diferencias de cero en cada modo. Una segunda ejecución completa produjo los mismos CSV y tablas, byte a byte, salvo las filas de tiempos medidos. Las nueve cifras cotejadas coincidieron, entre ellas \(J_D=286406.572503\) y los CVaR diarios de B y D. La campaña tardó 297.8 s en CPU, con la revisión `9aa42b2` y 411 pruebas aprobadas. Estas cifras son descriptivas: no hay pruebas de significancia, y marzo no es un periodo independiente.
+
+### Sensibilidad a \(\lambda_R\) (posterior a T08)
+
+**Alcance.** Esta sensibilidad no cambia el resultado principal de T08 ni la calibración de T07. Evalúa el criterio orientado al servicio de la rama `experimental/beta-comparation`: elegir el peso de mayor \(J\) medio entre beta y Chronos-2 en el ajuste y, en empate, el menor. Sobre la tabla de ajuste de T07, ese criterio elige \(\lambda_R=1\). Esa rama evaluó después el peso solo con Chronos-2; aquí se añade beta. Es una adaptación del proyecto, no procede del artículo, y marzo no interviene en la elección.
+
+```powershell
+uv run --locked --extra pronosticos python -m scripts.comparar_pesos_desarrollo --salida results/pesos_desarrollo
+uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --lambda-riesgo 1 --salida results/t08_2x2_lambda1
+```
+
+- **Desarrollo.** `scripts/comparar_pesos_desarrollo.py` recorre del 6 de enero al 3 de marzo (fin exclusivo) con \(\alpha=0.9\), \(\lambda_R\in\{0,1\}\), los dos proveedores, una inferencia por origen y estados continuos desde la configuración inicial. Reparte los días entre ajuste y validación con el corte de T07, aplica el criterio anterior y la regla de validación de T07, y contrasta ocho cifras publicadas. Los pesos 0.25, 0.5 y 2 no se repiten: su \(J\) medio de ajuste, publicado en T07, es menor.
+- **Marzo.** `--lambda-riesgo 1` repite las cuatro celdas con ese peso en C y D. Las comprobaciones son las de T08, salvo que D no se coteja, porque sus cifras publicadas corresponden a \(\lambda_R=0\).
+
+**Desarrollo** (`results/pesos_desarrollo/`, regenerable):
+
+| Periodo | Proveedor | \(J\), \(\lambda_R=0\) | \(J\), \(\lambda_R=1\) | Diferencia | CVaR, \(\lambda_R=0\) | CVaR, \(\lambda_R=1\) |
+|---|---|---:|---:|---:|---:|---:|
+| Ajuste (42 días) | Beta | 447397.384 | 447491.378 | +93.994 | 3089.123 | 3129.517 |
+| Ajuste (42 días) | Chronos-2 | 447885.333 | 447885.333 | 0 | 3078.168 | 3078.168 |
+| Validación (14 días) | Beta | 150935.735 | 150646.311 | −289.424 | 2809.385 | 2809.385 |
+| Validación (14 días) | Chronos-2 | 150794.594 | 150794.594 | 0 | 2910.200 | 2910.200 |
+
+\(\lambda_R=1\) gana el ajuste por 46.997 Wh·p de \(J\) medio, solo por beta, y pierde 144.712 Wh·p en la validación. Con Chronos-2, \(J\), el CVaR diario y los compromisos incumplidos (123) son idénticos con los dos pesos durante las ocho semanas. La regla de T07 marca el peso como recomendado porque tolera perder hasta 1 % de \(J\) y el CVaR medio empató; eso no lo respalda, porque con el criterio que lo eligió empeora fuera del ajuste.
+
+**Marzo, exploratorio** (`results/t08_2x2_lambda1/`, regenerable; A y B no cambian):
+
+| Indicador | C, \(\lambda_R=0\) | C, \(\lambda_R=1\) | D, \(\lambda_R=0\) | D, \(\lambda_R=1\) |
+|---|---:|---:|---:|---:|
+| \(J\) (Wh·p) | 286621.118 | 285894.482 | 286406.573 | 286813.424 |
+| \(S_{\mathrm{pond}}\) (%) | 93.4182 | 93.1813 | 93.3482 | 93.4808 |
+| Energía no atendida (Wh) | 16312.384 | 17032.216 | 16339.657 | 16482.651 |
+| Servicio crítico (%) | 100 | 100 | 100 | 100 |
+| CVaR diario (Wh·p) | 3799.378 | 3869.774 | 3887.228 | 3905.071 |
+| Peor día (Wh·p) | 6390.534 | 6390.534 | 6624.866 | 6624.866 |
+| Compromisos incumplidos (carga·h) | 43 | 23 | 45 | 12 |
+| Solicitudes no comprometidas (carga·h) | 186 | 218 | 185 | 226 |
+| Solicitudes desatendidas (carga·h) | 229 | 241 | 230 | 238 |
+| Mínimo de `bateria_02` (Wh) | 480.065 | 496.958 | 492.588 | 491.550 |
+
+Con \(\lambda_R=1\): C − A = +180.058, D − B = +593.401, D − C = +918.942 e interacción = +413.343 Wh·p, frente a −720.145 con \(\lambda_R=0\). Frente a peso cero, Chronos-2 gana 406.852 Wh·p, beta pierde 726.636 Wh·p y el promedio baja 159.892 Wh·p. Todas las diferencias entre pesos ocurren del 3 al 7 de marzo; solo el 7, beta pierde 748.371 Wh·p. D − C presenta compensación: más \(J\) y más CVaR diario (+35.297 Wh·p). El tiempo de control de esta corrida no se compara con el de T08, porque A y B también tardaron más en ella.
+
+**Lectura.** El orden entre pronósticos cambia de signo con \(\lambda_R\), así que no puede afirmarse cuál rinde más con el modo CVaR. La penalización no redujo la cola realizada: el CVaR diario sube con ambos pronósticos. Su efecto visible es comprometer menos cargas, lo que reduce los compromisos incumplidos a costa de más energía no atendida y menos servicio de prioridad 1 (de 69.47 % a 67.72 % con beta y de 69.86 % a 68.16 % con Chronos-2). El mayor \(J\) de D con \(\lambda_R=1\) no justifica adoptar ese peso: sería seleccionar con marzo, y en desarrollo no se sostiene. Se mantiene \(\lambda_R=0\) como resultado principal.
+
+**Verificación.** En desarrollo, 224 orígenes por proveedor y peso, sin violaciones físicas; errores máximos de \(1.14\times10^{-13}\) Wh en el bus y \(2.27\times10^{-13}\) Wh en baterías. Las ocho cifras de T07 coincidieron con la precisión publicada. En marzo, 672 horas y 112 orígenes por celda, sin violaciones físicas ni filtraciones; errores máximos de \(1.14\times10^{-13}\) Wh en el bus y \(2.84\times10^{-13}\) Wh en baterías; cuantiles y escenarios idénticos entre modos, y repetición de 30 horas con diferencias de cero. Las siete cifras cotejadas coincidieron. D con \(\lambda_R=1\) coincide con la rama citada en \(J\), \(S_{\mathrm{pond}}\), energía no atendida, compromisos incumplidos, solicitudes desatendidas, servicio por prioridad y nivel de servicio. Con el script modificado y \(\lambda_R=0\), una repetición completa reprodujo T08: mismas tablas y figuras, salvo los tiempos medidos y los metadatos de los SVG. Las campañas tardaron 950.0 s y 559.8 s en CPU, y pasaron 420 pruebas.
 
 **Indicadores principales** (calculados sobre ejecución realizada):
 

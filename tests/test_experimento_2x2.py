@@ -95,10 +95,28 @@ def test_candidatos_cvar_contienen_a_los_originales_con_cuantiles_dispersos():
     assert len(cvar["candidatos"]) >= len(original["candidatos"])
 
 
+def test_peso_positivo_llega_a_la_puntuacion_y_no_invalida_el_pareo():
+    caso = _evaluable(real=(0., 0.), prioridades=(1, 3))
+    base = deepcopy(caso.configuracion)
+
+    def disperso(historia, origen, horizonte):
+        filas = [[0., 0., 1000.]] * horizonte
+        return pd.DataFrame(filas, columns=CUANTILES,
+                            index=pd.date_range(origen, periods=horizonte, freq="h", name="inicio_utc"))
+
+    ejecucion = modulo.ejecutar_2x2(caso, dict(beta=_constante(0.), chronos=disperso), lambda_riesgo=1.)
+    assert caso.configuracion == base
+    assert parametros_mpc(ejecucion["casos"]["cvar"].configuracion) == ("cvar", .9, 1.)
+    decisiones = ejecucion["evaluaciones"]["cvar"]["resultados"]["chronos"]["decisiones"]
+    assert decisiones["lambda_riesgo"].eq(1.).all()
+    assert decisiones["score"].tolist() == pytest.approx((decisiones["J_esperado"] - decisiones["CVaR"]).tolist())
+    assert ejecucion["entre_modos"]["candidatos_contenidos"]
+
+
 @pytest.mark.parametrize("alteracion, mensaje", [
     (lambda r: r["pronosticos"][0]["crudos"].iloc.__setitem__((0, 0), 7.), "cambia de pronóstico"),
     (lambda r: r["pronosticos"][0]["escenarios"].__setitem__((0, 0), 7.), "cambia de pronóstico"),
-    (lambda r: r["decisiones"].loc.__setitem__((0, "score"), -1.), "no contienen"),
+    (lambda r: r["candidatos"].loc.__setitem__((slice(None), "J_esperado"), -1.), "no contienen"),
 ])
 def test_verificar_entre_modos_detecta_alteraciones(alteracion, mensaje):
     evaluaciones = _ejecucion()["evaluaciones"]
@@ -176,6 +194,14 @@ def test_cifras_publicadas_incluyen_d_y_rechazan_cambios():
         modulo.cotejar_publicadas(metricas, resumenes)
 
 
+def test_cifras_de_d_solo_se_cotejan_con_el_peso_de_t07():
+    metricas, resumenes = _publicadas()
+    metricas["D"]["J"] += 1.
+    filas = modulo.cotejar_publicadas(metricas, resumenes, lambda_riesgo=1.)
+    assert "J_D" not in filas and "CVaR_diario_D" not in filas
+    assert filas["CVaR_diario_B"]["coincide"]
+
+
 @pytest.fixture
 def comando(tmp_path, monkeypatch):
     """Comando T08 sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
@@ -189,7 +215,7 @@ def comando(tmp_path, monkeypatch):
     monkeypatch.setattr(modulo, "cargar_caso", lambda ruta: caso)
     monkeypatch.setattr(modulo, "cargar_chronos", lambda revision, dispositivo: object())
     monkeypatch.setattr(modulo, "proveedores", lambda caso, pipeline: dobles)
-    monkeypatch.setattr(modulo, "cotejar_publicadas", lambda metricas, resumenes: {})
+    monkeypatch.setattr(modulo, "cotejar_publicadas", lambda metricas, resumenes, **opciones: {})
     salida = tmp_path / "t08"
     monkeypatch.setattr(sys, "argv", ["experimento_2x2", "--config", str(config), "--salida", str(salida)])
     return config, salida, config.read_bytes()
@@ -226,13 +252,24 @@ def test_comando_exporta_cruce_figuras_y_registro_sin_tocar_entradas(comando):
     assert contrastes.loc["C-A", "compensacion"] in ("sin cambio", "mejora", "empeora", "compensación")
 
 
+def test_comando_registra_el_peso_de_la_sensibilidad(comando, monkeypatch):
+    _, salida, _ = comando
+    monkeypatch.setattr(sys, "argv", [*sys.argv, "--lambda-riesgo", "1"])
+    modulo.main()
+    informe = json.loads((salida / "resumen.json").read_text(encoding="utf-8"))
+    assert informe["control"]["cvar"] == dict(modo_mpc="cvar", alpha_cvar=.9, lambda_riesgo=1.)
+    assert informe["configuracion_cvar"]["lambda_riesgo"] == 1.
+    assert any("lambda_R=1 no es el peso fijado por T07" in supuesto for supuesto in informe["supuestos"])
+    assert not any("con lambda_R=0" in supuesto for supuesto in informe["supuestos"])
+
+
 @pytest.mark.parametrize("fallo", ["salida_existente", "publicadas"])
 def test_comando_fallido_no_publica_resumen(comando, monkeypatch, fallo):
     config, salida, original = comando
     if fallo == "salida_existente":
         salida.mkdir()
     else:
-        def distinto(metricas, resumenes):
+        def distinto(metricas, resumenes, **opciones):
             raise ValueError("T08: diferencias con cifras publicadas")
         monkeypatch.setattr(modulo, "cotejar_publicadas", distinto)
     with pytest.raises(SystemExit) as error:
