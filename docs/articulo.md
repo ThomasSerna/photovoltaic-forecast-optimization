@@ -5,9 +5,9 @@ Caso semisintético contextualizado en el Centro Educativo Rural El Rayo, Támes
 (Antioquia). Integrantes: Thomas Serna, Juan Esteban Palacio y Jeronimo Gutierrez.
 
 > Estado: borrador. Las secciones 3 a 6 se generaron a partir de
-> `results/t05_evaluacion_verificada/` y `results/t08_2x2/` (regenerables con los
-> comandos de la sección 3.6); sus figuras se copiaron a `docs/figuras/`. El resumen,
-> la introducción y la revisión de literatura se redactaron a partir de `docs/IDEA.md`,
+> `results/t05_evaluacion_verificada/`, `results/t08_2x2/`, `results/t08_2x2_lambda1/` y
+> `results/pesos_desarrollo/` (regenerables con los comandos de la sección 3.6); sus
+> figuras se copiaron a `docs/figuras/`. El resumen, la introducción y la revisión de literatura se redactaron a partir de `docs/IDEA.md`,
 > de Acuña et al. (2021) y de la ficha de Chronos-2; el equipo debe revisarlos antes de
 > la entrega.
 
@@ -30,8 +30,11 @@ filtraciones de información futura. Un experimento 2×2 cruzó además ambos pr
 con un modo del controlador que añade calendarios de los cuantiles 0,1 y 0,9, con un
 peso de riesgo calibrado en cero. Ese modo mejoró J un 0,32 % con beta y un 0,07 % con
 Chronos-2, y la ventaja de Chronos-2 sobre beta se invirtió (de +505,60 a −214,55 Wh·p).
-Estos resultados exploratorios, concentrados en pocos días nublados, indican que el
-diseño del controlador determina cuánto de la mejora predictiva llega al servicio.
+Una sensibilidad con λ_R = 1 devolvió la ventaja a Chronos-2 (+918,94 Wh·p), aunque ese
+peso no se sostuvo en la validación de desarrollo. Estos resultados exploratorios,
+concentrados en pocos días nublados, indican que el diseño del controlador determina
+cuánto de la mejora predictiva llega al servicio y no permiten afirmar qué pronóstico
+rinde más con el modo ampliado.
 
 **Palabras clave:** zonas no interconectadas; energía solar; pronóstico probabilístico;
 modelos fundacionales; control predictivo; simulación-optimización.
@@ -313,6 +316,13 @@ Sus diferencias con A y B miden el efecto de ampliar los candidatos, no el de la
 aversión al riesgo. Este modo es una adaptación del proyecto y no procede del artículo
 de Acuña et al. (2021).
 
+**Sensibilidad al peso de riesgo.** Un criterio alternativo, orientado al servicio, elige
+el peso de mayor J medio entre beta y Chronos-2 en el ajuste y, en empate, el menor. Con
+los resultados de ese ajuste selecciona λ_R = 1. Ese peso se evaluó en la validación de
+desarrollo con ambos pronósticos y se repitieron C y D en marzo. Es una sensibilidad
+exploratoria: no sustituye a λ_R = 0 como resultado principal, y marzo no interviene en
+la elección.
+
 **Referencia reactiva.** Para interpretar los resultados se añade la heurística de
 T03 ejecutada hora a hora con la irradiancia realizada, sin compromisos. Equivale a
 conocer de antemano la energía FV de la hora en curso, de modo que es una referencia
@@ -376,11 +386,25 @@ y escenarios idénticos. Además de las comprobaciones anteriores en cada modo, 
 el pareo entre modos, repite las primeras horas volviendo a pronosticar y exige que A,
 B, D y la referencia reproduzcan las cifras ya publicadas.
 
+La sensibilidad al peso de riesgo se repite con
+
+```
+uv run --locked --extra pronosticos python -m scripts.comparar_pesos_desarrollo --salida results/pesos_desarrollo
+uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --lambda-riesgo 1 --salida results/t08_2x2_lambda1
+```
+
+El primer comando recorre del 6 de enero al 2 de marzo con λ_R ∈ {0, 1}, con estados
+continuos, y contrasta sus resultados con las cifras de la calibración. El segundo
+repite el experimento 2×2 con ese peso; en él, D no se coteja con cifras publicadas,
+porque estas corresponden a λ_R = 0.
+
 ## 4. Resultados
 
 Los valores de las secciones 4.1 a 4.4 proceden de la ejecución verificada el 19 de
-octubre de 2026 (`results/t05_evaluacion_verificada/`), y los de la sección 4.5, de la
-del 1 de noviembre de 2026 (`results/t08_2x2/`). Esas carpetas están excluidas de Git y
+octubre de 2026 (`results/t05_evaluacion_verificada/`); los de la sección 4.5, de la
+del 1 de noviembre de 2026 (`results/t08_2x2/`), y los de la sección 4.6, de las del
+2 de noviembre de 2026 (`results/pesos_desarrollo/` y `results/t08_2x2_lambda1/`).
+Esas carpetas están excluidas de Git y
 se regeneran con los comandos anteriores en carpetas nuevas; las figuras de esta sección
 son copias de las suyas, guardadas en `docs/figuras/`. Entorno: Python 3.12.15,
 chronos-forecasting 2.3.2, torch 2.14.1, SciPy 1.18.1 y CPU con Windows 11.
@@ -551,6 +575,56 @@ D − B y B − A mejoran ambos, y D − C empeora ambos (Figura 7).
 
 *Figura 7. Diferencia de J y de CVaR diario de cada celda respecto a A.*
 
+### 4.6. Sensibilidad al peso de riesgo
+
+**Desarrollo.** La Tabla 4 compara λ_R = 0 y λ_R = 1 con trayectorias continuas del
+6 de enero al 2 de marzo. λ_R = 1 gana el ajuste por 47,00 Wh·p de J medio, únicamente
+por beta, y pierde 144,71 Wh·p en la validación. Con Chronos-2, J, el CVaR diario y los
+compromisos incumplidos son idénticos con los dos pesos durante las ocho semanas.
+
+**Tabla 4.** J y CVaR diario en desarrollo (Wh·p).
+
+| Periodo | Pronóstico | J, λ_R = 0 | J, λ_R = 1 | Diferencia | CVaR, λ_R = 0 | CVaR, λ_R = 1 |
+|---|---|---:|---:|---:|---:|---:|
+| Ajuste (42 días) | Beta | 447 397,38 | 447 491,38 | +93,99 | 3089,12 | 3129,52 |
+| Ajuste (42 días) | Chronos-2 | 447 885,33 | 447 885,33 | 0 | 3078,17 | 3078,17 |
+| Validación (14 días) | Beta | 150 935,73 | 150 646,31 | −289,42 | 2809,39 | 2809,39 |
+| Validación (14 días) | Chronos-2 | 150 794,59 | 150 794,59 | 0 | 2910,20 | 2910,20 |
+
+La regla de validación de la calibración acepta el peso, porque tolera perder hasta un
+1 % de J y el CVaR diario medio empató. Eso no lo respalda: con el mismo criterio de J
+medio que lo eligió, empeora fuera del ajuste.
+
+**Marzo.** La Tabla 5 repite C y D con cada peso; A y B no cambian.
+
+**Tabla 5.** Celdas C y D con cada peso, del 3 al 30 de marzo de 2025.
+
+| Indicador | C, λ_R = 0 | C, λ_R = 1 | D, λ_R = 0 | D, λ_R = 1 |
+|---|---:|---:|---:|---:|
+| J (Wh·p) | 286 621,12 | 285 894,48 | 286 406,57 | 286 813,42 |
+| S_pond | 93,42 % | 93,18 % | 93,35 % | 93,48 % |
+| Energía no atendida (Wh) | 16 312 | 17 032 | 16 340 | 16 483 |
+| Servicio crítico (p = 3) | 100 % | 100 % | 100 % | 100 % |
+| Servicio p = 2 | 93,19 % | 93,18 % | 92,87 % | 93,83 % |
+| Servicio p = 1 | 69,47 % | 67,72 % | 69,86 % | 68,16 % |
+| Horas con demanda atendida por completo | 92,71 % | 92,26 % | 93,01 % | 92,41 % |
+| CVaR diario (Wh·p) | 3799,38 | 3869,77 | 3887,23 | 3905,07 |
+| Pérdida del peor día (Wh·p) | 6390,53 | 6390,53 | 6624,87 | 6624,87 |
+| Compromisos incumplidos (carga·h) | 43 | 23 | 45 | 12 |
+| Solicitudes no comprometidas (carga·h) | 186 | 218 | 185 | 226 |
+| Solicitudes desatendidas (carga·h) | 229 | 241 | 230 | 238 |
+
+Con λ_R = 1, D − C pasa de −214,55 a **+918,94 Wh·p**, y la interacción, de −720,14 a
++413,34 Wh·p. C − A baja a +180,06 Wh·p y D − B sube a +593,40 Wh·p. Frente a λ_R = 0,
+Chronos-2 gana 406,85 Wh·p y beta pierde 726,64 Wh·p, de modo que el promedio de ambos
+baja 159,89 Wh·p. Todas las diferencias entre pesos ocurren del 3 al 7 de marzo. Solo el
+7 de marzo beta pierde 748,37 Wh·p, más que toda su caída del mes.
+
+El CVaR diario sube con ambos pronósticos, así que la penalización no redujo la cola
+realizada. Lo que cambia es la cantidad de cargas comprometidas: bajan los compromisos
+incumplidos, a cambio de más energía no atendida y menos servicio de prioridad 1. D − C
+presenta compensación: Chronos-2 obtiene más J y también más CVaR diario (+35,30 Wh·p).
+
 ## 5. Discusión
 
 **Un mejor pronóstico no implica, por sí solo, más servicio.** Chronos-2 reduce el
@@ -576,7 +650,8 @@ contrario: el modo ampliado añadió 906,69 Wh·p con beta y 186,55 Wh·p con Ch
 conviene leerlo como superioridad de beta. El resultado depende casi por completo del
 4 de marzo, con una interacción de −1203,77 Wh·p, y ese día A tiene el J más bajo de las
 cuatro celdas, de modo que beta tenía más por recuperar. Lo que sí muestra es que el
-orden entre pronósticos no se sostiene al cambiar el controlador. Además, con beta,
+orden entre pronósticos no se sostiene al cambiar el controlador ni, como se ve en la
+sección 4.6, al cambiar su peso de riesgo. Además, con beta,
 cambiar de controlador aportó más que cambiar de pronóstico con el modo original
 (+906,69 frente a +505,60 Wh·p).
 
@@ -587,6 +662,17 @@ compensación entre beneficio medio y riesgo, aunque el modo sí tiene costos. L
 compromisos incumplidos suben de 29 a 43 con beta y de 35 a 45 con Chronos-2, porque
 incumplir un compromiso no resta en la puntuación. El servicio se desplaza de la
 prioridad 1 a la 2, y el tiempo de control se multiplica por 2,4 a 2,7.
+
+**El peso de riesgo cambia el orden, pero la evidencia no permite adoptarlo.** Con
+λ_R = 1, Chronos-2 vuelve a superar a beta y obtiene el mayor J de las seis trayectorias.
+Elegir ese peso por ese resultado sería seleccionar con marzo. En desarrollo gana por
+47,00 Wh·p (0,01 %), solo por beta, y después pierde en la validación; en marzo también
+empeora el promedio de ambos pronósticos. La penalización tampoco redujo la cola
+realizada. Su efecto visible es comprometer menos cargas: los compromisos incumplidos
+bajan de 43 a 23 con beta y de 45 a 12 con Chronos-2, de modo que su aumento en el modo
+ampliado depende de λ_R = 0. Por eso se conserva λ_R = 0 como resultado principal. La
+conclusión defendible es que el orden entre pronósticos es inestable en esta muestra, no
+que uno de ellos sea mejor con el modo ampliado.
 
 **La referencia reactiva no acota al MPC.** Con información perfecta de la hora en
 curso, la heurística reactiva deja menos energía sin atender (10,93 %). Aun así,
@@ -619,7 +705,10 @@ compartidos) y bajo la misma realización meteorológica.
 - Marzo orientó el diseño del modo ampliado, así que el experimento 2×2 no es una
   validación confirmatoria. No hay un periodo independiente, porque la demanda sintética
   termina el 30 de marzo.
-- La inversión entre pronósticos depende de cuatro días, y sobre todo de uno.
+- La inversión entre pronósticos depende de cuatro días, sobre todo de uno, y cambia de
+  signo con λ_R.
+- El contraste de λ_R se limita a los pesos 0 y 1. Los pesos 0,25, 0,5 y 2 no se
+  repitieron, porque su J medio en el ajuste fue menor.
 - La beta se parametriza con dos formas y escala aprendida, en lugar de la beta4 del
   artículo.
 - Chronos-2 se usa sin ajuste. No puede descartarse que haya visto datos semejantes
@@ -649,14 +738,18 @@ significancia ni se afirman beneficios en campo.
    entre ellos, a cambio de más compromisos incumplidos y más cómputo. Aportó más con
    beta (+906,69 Wh·p) que con Chronos-2 (+186,55 Wh·p) e invirtió el orden entre
    pronósticos. Como λ_R = 0, no demuestra un beneficio de la aversión al riesgo.
-6. Bajo estos supuestos, Chronos-2 aporta una mejora clara en calidad predictiva y una
-   mejora modesta y no concluyente en servicio, que no se mantiene al cambiar el
-   controlador. El éxito del trabajo no dependía de que Chronos-2 ganara.
+6. El orden entre pronósticos también depende del peso de riesgo: con λ_R = 1, D − C
+   pasa de −214,55 a +918,94 Wh·p y los compromisos incumplidos bajan, pero el CVaR
+   diario no mejora. Ese peso no se sostiene en la validación de desarrollo, así que se
+   conserva λ_R = 0 y no se afirma qué pronóstico rinde más con el modo ampliado.
+7. Bajo estos supuestos, Chronos-2 aporta una mejora clara en calidad predictiva y una
+   mejora modesta y no concluyente en servicio, cuyo signo depende del controlador y de
+   su peso. El éxito del trabajo no dependía de que Chronos-2 ganara.
 
 **Trabajo futuro:**
 
 - extender la evaluación a otros meses y estaciones, con varias realizaciones, y
-  contrastar el modo ampliado en un periodo independiente;
+  contrastar el modo ampliado y su peso de riesgo en un periodo independiente;
 - usar demanda medida;
 - penalizar los compromisos incumplidos en la puntuación del controlador;
 - analizar la sensibilidad a la capacidad de almacenamiento.

@@ -89,6 +89,22 @@ entre pronósticos no se sostiene al cambiar el controlador.
 
 ![Contrastes del experimento 2×2](docs/figuras/t08_contrastes.png)
 
+Una sensibilidad posterior repitió C y D con **λ_R = 1**, el peso que elige el criterio
+de mayor J medio en el ajuste:
+
+| Indicador | C, λ_R = 0 | C, λ_R = 1 | D, λ_R = 0 | D, λ_R = 1 |
+|---|---:|---:|---:|---:|
+| J (Wh·p) | 286 621,12 | 285 894,48 | 286 406,57 | 286 813,42 |
+| CVaR diario de pérdida (Wh·p) | 3799,38 | 3869,77 | 3887,23 | 3905,07 |
+| Compromisos incumplidos (carga·h) | 43 | 23 | 45 | 12 |
+| Energía no atendida (Wh) | 16 312 | 17 032 | 16 340 | 16 483 |
+
+Con ese peso, D − C pasa de −214,55 a **+918,94 Wh·p**. Los compromisos incumplidos
+bajan, pero el CVaR diario no mejora. El peso tampoco se sostiene en desarrollo: gana el
+ajuste por 47,00 Wh·p de J medio, solo por beta, y pierde 144,71 Wh·p en la validación.
+Por eso λ_R = 0 sigue como resultado principal. **No puede afirmarse qué pronóstico rinde
+más con el modo CVaR.**
+
 ## Ejecutar el experimento
 
 Se necesita [uv](https://docs.astral.sh/uv/getting-started/installation/).
@@ -207,6 +223,18 @@ La raíz de la salida contiene `tabla_2x2.csv`, `tabla_2x2.md`, `contrastes.csv`
 salidas de T05 de cada modo. El comando falla si A, B, D o la referencia no reproducen
 las cifras publicadas. El [protocolo](docs/IDEA.md#experimento-22-t08) detalla el diseño,
 las verificaciones y los límites.
+
+Para repetir la sensibilidad a λ_R, con carpetas de salida nuevas (unos 16 y 10 minutos
+en CPU):
+
+```powershell
+uv run --locked --extra pronosticos python -m scripts.comparar_pesos_desarrollo --salida results/pesos_desarrollo
+uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --lambda-riesgo 1 --salida results/t08_2x2_lambda1
+```
+
+El primer comando compara λ_R = 0 y λ_R = 1 en desarrollo, sin usar marzo. El segundo
+repite el experimento 2×2 con ese peso; D solo se coteja con cifras publicadas cuando
+λ_R = 0.
 
 ## Ejecutar las pruebas
 
