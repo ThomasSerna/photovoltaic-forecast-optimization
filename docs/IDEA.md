@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado:** **T01–T07 completadas y verificadas en CPU**. T05 evaluó el MPC original en marzo; T06 añadió el modo CVaR y T07 fijó \(\alpha\) y calibró su peso de riesgo con desarrollo. El borrador del artículo en `docs/articulo.md` presenta los resultados históricos de T05.
+**Estado:** **T01–T08 completadas y verificadas en CPU**. T05 evaluó el MPC original en marzo; T06 añadió el modo CVaR, T07 fijó \(\alpha\) y calibró su peso de riesgo con desarrollo, y T08 cruzó pronósticos y controladores en un experimento exploratorio 2×2. El borrador del artículo en `docs/articulo.md` presenta los resultados de T05 y T08.
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -343,6 +343,28 @@ uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --salida r
 - **Contrastes.** C − A, D − B, B − A, D − C y la interacción (D − C) − (B − A) sobre totales. Por día solo se calculan para \(J\) y la pérdida, porque el CVaR no se suma por días. Se describen media, mediana, extremos y días a favor y en contra, sin pruebas de significancia. Hay compensación cuando \(J\) y el CVaR diario suben a la vez o bajan a la vez.
 - **Exportaciones.** `original/` y `cvar/` guardan las salidas de T05 de cada modo. La raíz contiene `tabla_2x2.csv`, `tabla_2x2.md`, `contrastes.csv`, `diario_2x2.csv`, las figuras `contrastes`, `diferencias_diarias` y `compensacion` en PNG y SVG, y `resumen.json` con parámetros, semillas y hashes. No depende de otras carpetas de `results/`.
 
+**Resultados exploratorios** (`results/t08_2x2/`, regenerable):
+
+| Indicador | A | B | C | D | C − A | D − B | (D − C) − (B − A) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| \(J\) (Wh·p) | 285714.424 | 286220.023 | 286621.118 | 286406.573 | +906.694 | +186.549 | −720.145 |
+| \(S_{\mathrm{pond}}\) (%) | 93.1226 | 93.2874 | 93.4182 | 93.3482 | +0.2955 | +0.0608 | −0.2347 |
+| Energía no atendida (Wh) | 16418.241 | 16352.931 | 16312.384 | 16339.657 | −105.857 | −13.275 | +92.582 |
+| Servicio crítico (%) | 100 | 100 | 100 | 100 | 0 | 0 | 0 |
+| CVaR diario (Wh·p) | 4150.744 | 3949.084 | 3799.378 | 3887.228 | −351.365 | −61.855 | +289.510 |
+| Peor día (Wh·p) | 7645.565 | 6676.125 | 6390.534 | 6624.866 | −1255.031 | −51.259 | +1203.772 |
+| Compromisos incumplidos (carga·h) | 29 | 35 | 43 | 45 | +14 | +10 | −4 |
+| Solicitudes desatendidas (carga·h) | 220 | 229 | 229 | 230 | +9 | +1 | −8 |
+| Mínimo de `bateria_02` (Wh) | 487.551 | 495.165 | 480.065 | 492.588 | −7.486 | −2.577 | +4.910 |
+| Control sin inferencia (s) | 35.922 | 36.602 | 95.738 | 86.088 | +59.816 | +49.486 | −10.329 |
+| Calendarios únicos por origen | 1.973 | 1.875 | 4.429 | 4.277 | +2.455 | +2.402 | −0.054 |
+
+El mínimo de `bateria_01` es 480 Wh en las cuatro celdas. El modo ampliado aumentó \(J\) un 0.317 % con beta y un 0.065 % con Chronos-2, y redujo el CVaR diario un 8.47 % y un 1.57 %. En consecuencia, la diferencia entre pronósticos cambia de signo: B − A es +505.599 Wh·p y D − C es −214.546 Wh·p. Las cuatro celdas coinciden en 24 de 28 días. La interacción se concentra en el 4 de marzo (−1203.772 Wh·p) y el 5 de marzo (+474.300); el 6 y el 17 aportan +89.327 y −80.000. Ese 4 de marzo, A tiene el \(J\) más bajo de las cuatro celdas.
+
+**Lectura.** Más candidatos no favorecieron a Chronos-2 en esta muestra, pero la inversión depende sobre todo de un día y no prueba que beta sea mejor. Lo que muestra es que el orden entre pronósticos no se sostiene al cambiar el controlador. Ningún contraste entre pares presenta compensación: C − A, D − B y B − A mejoran \(J\) y CVaR, y D − C empeora ambos. Como \(\lambda_R=0\), la reducción del CVaR es un efecto colateral de elegir por \(J\) esperado, no aversión al riesgo. El modo tiene costos: más compromisos incumplidos, porque incumplir no resta en la puntuación; servicio desplazado de la prioridad 1 a la 2 (C − A: −1.71 y +1.40 p.p.; D − B: −0.39 y +0.30 p.p.), y 2.4 a 2.7 veces más tiempo de control. C difiere de A en 13 de 672 horas ejecutadas y D de B en 10; en esas celdas la etiqueta `cuantil` marca q0.1 en 80 y 81 de 112 orígenes, lo que confirma que no mide el uso de las colas. Del 3 de marzo a las 12:00 al 5 de marzo a las 18:00, C y D eligieron en 9 de 10 orígenes un calendario propuesto por q0.9, a menudo con reserva.
+
+**Verificación.** 672 horas y 112 orígenes por celda, sin violaciones físicas ni filtraciones; errores máximos de \(1.14\times10^{-13}\) Wh en el bus y \(2.85\times10^{-13}\) Wh en baterías. Los 112 orígenes de cada proveedor tuvieron cuantiles y escenarios idénticos entre modos. La repetición de 30 horas y cinco orígenes dio diferencias de cero en cada modo. Una segunda ejecución completa produjo los mismos CSV y tablas, byte a byte, salvo las filas de tiempos medidos. Las nueve cifras cotejadas coincidieron, entre ellas \(J_D=286406.572503\) y los CVaR diarios de B y D. La campaña tardó 297.8 s en CPU, con la revisión `9aa42b2` y 411 pruebas aprobadas. Estas cifras son descriptivas: no hay pruebas de significancia, y marzo no es un periodo independiente.
+
 **Indicadores principales** (calculados sobre ejecución realizada):
 
 | Tipo | Indicador |
@@ -357,7 +379,7 @@ El resultado principal es la **diferencia pareada B−A** en servicio bajo la mi
 
 **Criterio de éxito del trabajo:** ejecutar ambos métodos de extremo a extremo, respetar la física, mostrar resultados reproducibles y explicar si Chronos-2 aporta o no una mejora bajo estos supuestos. **No** es necesario que Chronos-2 gane.
 
-## 8. Implementación compacta: T01–T07 implementadas
+## 8. Implementación compacta: T01–T08 implementadas
 
 Conservar `data/`, la ingesta/generación existente de `src/` y sus pruebas actuales. T04 añade únicamente el peso terminal compartido a la configuración; los parámetros físicos conservan sus supuestos. No crear API, base de datos, interfaz web, framework de servicios ni abstracciones innecesarias.
 
@@ -382,7 +404,7 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 | **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
 | **T06 — MPC sensible al riesgo** ([#10](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/10)) | Modo CVaR configurable, selección de calendarios y registro reproducible | **Implementada; calibrada en T07** |
 | **T07 — Calibración CVaR** ([#11](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/11)) | Calibrar y validar el riesgo con desarrollo | **Completada y verificada en CPU** |
-| **T08 — Experimento 2×2** ([#12](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/12)) | Cruzar pronóstico y controlador, exportar tabla, figuras y parámetros, y actualizar el artículo | **Implementada; campaña pendiente** |
+| **T08 — Experimento 2×2** ([#12](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/12)) | Cruzar pronóstico y controlador, exportar tabla, figuras y parámetros, y actualizar el artículo | **Completada y verificada en CPU; resultados exploratorios** |
 
 Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 documenta el experimento del MPC original.
 

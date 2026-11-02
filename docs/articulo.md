@@ -1,12 +1,12 @@
 # Pronósticos de Chronos-2 frente a una referencia beta en la planificación de un sistema fotovoltaico aislado
 
-**Borrador del artículo del curso Optimización 1 (T05).**
+**Borrador del artículo del curso Optimización 1 (T05 y T08).**
 Caso semisintético contextualizado en el Centro Educativo Rural El Rayo, Támesis
 (Antioquia). Integrantes: Thomas Serna, Juan Esteban Palacio y Jeronimo Gutierrez.
 
 > Estado: borrador. Las secciones 3 a 6 se generaron a partir de
-> `results/t05_evaluacion_verificada/` (regenerable con el comando de la sección 3.6);
-> sus cuatro figuras se copiaron a `docs/figuras/`. El resumen,
+> `results/t05_evaluacion_verificada/` y `results/t08_2x2/` (regenerables con los
+> comandos de la sección 3.6); sus figuras se copiaron a `docs/figuras/`. El resumen,
 > la introducción y la revisión de literatura se redactaron a partir de `docs/IDEA.md`,
 > de Acuña et al. (2021) y de la ficha de Chronos-2; el equipo debe revisarlos antes de
 > la entrega.
@@ -26,7 +26,11 @@ y acercó la cobertura del intervalo 0,1–0,9 a la nominal (80,95 % frente a 76
 La demanda ponderada atendida, en cambio, solo aumentó un 0,18 % (+0,16 p.p. de
 S_pond), con diferencias concentradas en 4 de los 28 días. Las cargas críticas se
 atendieron por completo con ambos pronósticos y no hubo violaciones físicas ni
-filtraciones de información futura. Estos resultados exploratorios indican que el
+filtraciones de información futura. Un experimento 2×2 cruzó además ambos pronósticos
+con un modo del controlador que añade calendarios de los cuantiles 0,1 y 0,9, con un
+peso de riesgo calibrado en cero. Ese modo mejoró J un 0,32 % con beta y un 0,07 % con
+Chronos-2, y la ventaja de Chronos-2 sobre beta se invirtió (de +505,60 a −214,55 Wh·p).
+Estos resultados exploratorios, concentrados en pocos días nublados, indican que el
 diseño del controlador determina cuánto de la mejora predictiva llega al servicio.
 
 **Palabras clave:** zonas no interconectadas; energía solar; pronóstico probabilístico;
@@ -74,7 +78,11 @@ el Centro Educativo Rural El Rayo, en Támesis (Antioquia), con irradiancia del
 reanálisis ERA5 (Hersbach et al., 2020) y demanda sintética. No se trata de una
 instalación real ni de un diagnóstico energético de la institución.
 
-Las contribuciones son tres:
+Esa evaluación deja una segunda pregunta: ¿aprovecha mejor Chronos-2 un controlador que
+considera más cuantiles del pronóstico? Para responderla se cruzan los dos pronósticos
+con dos modos del controlador en un experimento 2×2.
+
+Las contribuciones son cuatro:
 
 1. Una adaptación verificable del modelo de Acuña et al. (2021), con baterías
    individuales, una interpretación física explícita de las desigualdades impresas y la
@@ -85,6 +93,9 @@ Las contribuciones son tres:
 3. Una evaluación pareada y reproducible de la calidad del pronóstico y del servicio
    energético, con comprobaciones de balances, de filtraciones de información futura y
    de repetición.
+4. Un experimento 2×2 de pronóstico por controlador, con pronósticos idénticos entre
+   modos, que separa el efecto de ampliar los calendarios candidatos de la diferencia
+   entre pronósticos y mide su interacción.
 
 El objetivo no es reproducir numéricamente el caso Volcanes ni demostrar que Chronos-2
 es superior. El trabajo cumple su propósito si explica, con resultados verificables, si
@@ -212,6 +223,16 @@ controlador, simulador, métricas y la meteorología realizada que las evalúa.
 | A — beta | Mezcla, por hora local, de masa en cero y beta de dos parámetros (loc = 0, escala = 1,05 × máximo positivo) ajustada por máxima verosimilitud sobre las últimas 336 h | Idéntico |
 | B — Chronos-2 | Cuantiles 0,1–0,9 del checkpoint oficial `amazon/chronos-2` (revisión `29ec376…`), sin entrenamiento, con las mismas 336 h | Idéntico |
 
+El experimento 2×2 añade dos celdas con los mismos pronósticos y el modo ampliado del
+controlador (sección 3.4), con igual demanda, física, estado inicial y cronología:
+
+| Celda | Pronóstico | Controlador |
+|---|---|---|
+| A | Beta | Original |
+| B | Chronos-2 | Original |
+| C | Beta | Ampliado con CVaR (α = 0,9; λ_R = 0) |
+| D | Chronos-2 | Ampliado con CVaR (α = 0,9; λ_R = 0) |
+
 ### 3.2. Datos
 
 - **Irradiancia:** GHI media horaria de reanálisis ERA5 (Open-Meteo) para las
@@ -222,9 +243,12 @@ controlador, simulador, métricas y la meteorología realizada que las evalúa.
   Generan 84 días (2016 h) de demanda programada sintética (semilla 20261018),
   conciliada con cuatro diferencias provisionales del medidor. La demanda se supone
   conocida por ambas alternativas para aislar la incertidumbre solar.
-- **Partición temporal:** desarrollo del 6 de enero al 2 de marzo de 2025. La
-  calibración usa solo la semana del 6 al 12 de enero. La evaluación reservada va del
-  3 al 30 de marzo de 2025 (672 h). Ningún parámetro se ajustó con fechas de evaluación.
+- **Partición temporal:** desarrollo del 6 de enero al 2 de marzo de 2025. El peso
+  terminal se calibró con la semana del 6 al 12 de enero; el modo CVaR se ajustó del
+  6 de enero al 16 de febrero y se validó del 17 de febrero al 2 de marzo. La evaluación
+  reservada va del 3 al 30 de marzo de 2025 (672 h). Ningún parámetro se ajustó con
+  fechas de evaluación. Como marzo ya se había analizado antes de diseñar el modo CVaR,
+  el experimento 2×2 sobre ese periodo es exploratorio.
 
 ### 3.3. Modelo físico (adaptado de Acuña et al., 2021, §2.2)
 
@@ -276,6 +300,19 @@ fijo, una carga no comprometida no se enciende aunque sobre energía (z ≤ x). 
 es una adaptación del proyecto: el artículo selecciona la solución determinista más
 frecuente entre réplicas y menciona el control predictivo como extensión (§§3.1 y 6).
 
+**Modo ampliado con CVaR.** Este modo propone hasta 12 calendarios, al combinar los
+cuantiles 0,1, 0,5 y 0,9 con las cuatro reservas, y evalúa cada calendario distinto una
+sola vez. Para cada uno calcula en los 50 escenarios la pérdida de servicio
+L_s = Σ_{h,k} p_{k,h} D_{k,h} (1 − z_{k,h}) y elige el de mayor E[J] − λ_R · CVaR_α(L),
+sin término terminal. El CVaR promedia la peor fracción 1 − α de las pérdidas
+(Rockafellar y Uryasev, 2002). Con datos de desarrollo se fijó α = 0,9 y se probaron
+λ_R ∈ {0; 0,25; 0,5; 1; 2}. Los pesos 0, 0,25 y 0,5 empataron en el menor CVaR diario
+medio y el desempate por J eligió **λ_R = 0**; los pesos 1 y 2 lo empeoraron. Por
+tanto, C y D no penalizan el riesgo: eligen el mayor J esperado entre más calendarios.
+Sus diferencias con A y B miden el efecto de ampliar los candidatos, no el de la
+aversión al riesgo. Este modo es una adaptación del proyecto y no procede del artículo
+de Acuña et al. (2021).
+
 **Referencia reactiva.** Para interpretar los resultados se añade la heurística de
 T03 ejecutada hora a hora con la irradiancia realizada, sin compromisos. Equivale a
 conocer de antemano la energía FV de la hora en curso, de modo que es una referencia
@@ -294,6 +331,9 @@ la diferencia principal B − A.
 | Servicio | Servicio crítico | Fracción atendida de la energía con prioridad ≥ 3 |
 | Servicio | Nivel de servicio y faltante | Análogos de §4.2 del artículo: proporción de horas con demanda atendida por completo, y fracción media no atendida en las horas con déficit. El artículo los mide sobre réplicas simuladas; aquí se miden sobre horas realizadas |
 | Control | Baterías | Estados mínimo, medio y final, y horas en el mínimo |
+| Control | Compromisos incumplidos | Solicitudes comprometidas (x = 1) que no se atendieron (z = 0), en carga·h |
+| Control | Horas con x distinto | Horas ejecutadas en que dos celdas comprometen cargas diferentes |
+| Riesgo | CVaR diario | CVaR de α = 0,9 sobre la pérdida realizada de cada día local, Σ p · energía no atendida, en Wh·p. Con 28 días, la cola equivale a 2,8 días. Es distinto del CVaR de escenarios que calcula el controlador |
 | Consistencia | Violaciones y filtraciones | Balances y cotas con tolerancia de 1e−6 Wh; contexto, bloques y realizaciones nunca posteriores al origen |
 | Recursos | Tiempos | Carga de Chronos-2, inferencia por origen y ejecución |
 
@@ -301,6 +341,11 @@ La comparación principal es la diferencia **pareada B − A** de J y S_pond, to
 día local. Con 28 días, una sola realización meteorológica y demanda sintética, se
 describe su distribución (media, mediana, extremos, días a favor y en contra) sin
 pruebas de significancia.
+
+En el experimento 2×2 se informan C − A y D − B, que dan el efecto del modo ampliado
+con cada pronóstico, y la interacción (D − C) − (B − A), que mide si el controlador
+altera la diferencia entre pronósticos. Se registra compensación entre beneficio medio
+y riesgo cuando J y el CVaR diario suben o bajan a la vez.
 
 ### 3.6. Verificación y reproducibilidad
 
@@ -319,14 +364,25 @@ ejecuta A, B y la referencia con el entorno fijado en `uv.lock`. Verifica:
   flujos dentro de 1e−6 Wh y cuantiles crudos dentro de rtol = 1e−5;
 - que entradas y código no cambien durante la ejecución.
 
-Si alguna comprobación falla, no publica `resumen.json`.
+Si alguna comprobación falla, no publica `resumen.json`. El experimento 2×2 se ejecuta
+con
+
+```
+uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --salida results/t08_2x2
+```
+
+Hace una sola inferencia por origen y proveedor, de modo que A/C y B/D reciben cuantiles
+y escenarios idénticos. Además de las comprobaciones anteriores en cada modo, verifica
+el pareo entre modos, repite las primeras horas volviendo a pronosticar y exige que A,
+B, D y la referencia reproduzcan las cifras ya publicadas.
 
 ## 4. Resultados
 
-Los valores proceden de la ejecución verificada el 19 de octubre de 2026
-(`results/t05_evaluacion_verificada/`). Esa carpeta está excluida de Git y se
-regenera con el comando anterior en una carpeta nueva; las figuras de esta sección son
-copias de las suyas, guardadas en `docs/figuras/`. Entorno: Python 3.12.15,
+Los valores de las secciones 4.1 a 4.4 proceden de la ejecución verificada el 19 de
+octubre de 2026 (`results/t05_evaluacion_verificada/`), y los de la sección 4.5, de la
+del 1 de noviembre de 2026 (`results/t08_2x2/`). Esas carpetas están excluidas de Git y
+se regeneran con los comandos anteriores en carpetas nuevas; las figuras de esta sección
+son copias de las suyas, guardadas en `docs/figuras/`. Entorno: Python 3.12.15,
 chronos-forecasting 2.3.2, torch 2.14.1, SciPy 1.18.1 y CPU con Windows 11.
 
 ### 4.1. Consistencia del experimento
@@ -434,6 +490,67 @@ más energía de prioridad 2 y menos de prioridad 1.
 
 *Figura 4. Energía almacenada en cada batería al final de cada hora.*
 
+### 4.5. Experimento 2×2
+
+**Consistencia.** Las cuatro celdas cubren 672 h y 112 orígenes, sin violaciones físicas
+ni filtraciones. El error máximo es de 1,2·10⁻¹³ Wh en el bus y de 2,9·10⁻¹³ Wh en
+batería. A/C y B/D recibieron cuantiles y escenarios idénticos. La repetición de las
+primeras 30 h coincidió exactamente en cada modo, y una segunda ejecución completa
+produjo las mismas tablas, salvo los tiempos medidos. A, B y la referencia reprodujeron
+las cifras de T05, y D, las de la comparación posterior a la calibración.
+
+**Tabla 3.** Celdas del experimento 2×2, del 3 al 30 de marzo de 2025.
+
+| Indicador | A | B | C | D | C − A | D − B | (D − C) − (B − A) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| J (Wh·p) | 285 714,42 | 286 220,02 | 286 621,12 | 286 406,57 | +906,69 | +186,55 | −720,14 |
+| S_pond | 93,12 % | 93,29 % | 93,42 % | 93,35 % | +0,30 p.p. | +0,06 p.p. | −0,23 p.p. |
+| Energía no atendida (Wh) | 16 418 | 16 353 | 16 312 | 16 340 | −106 | −13 | +93 |
+| Servicio crítico (p = 3) | 100 % | 100 % | 100 % | 100 % | 0 | 0 | 0 |
+| Servicio p = 2 | 91,79 % | 92,56 % | 93,19 % | 92,87 % | +1,40 p.p. | +0,30 p.p. | −1,10 p.p. |
+| Servicio p = 1 | 71,18 % | 70,25 % | 69,47 % | 69,86 % | −1,71 p.p. | −0,39 p.p. | +1,31 p.p. |
+| Horas con demanda atendida por completo | 93,01 % | 93,01 % | 92,71 % | 93,01 % | −0,30 p.p. | 0 | +0,30 p.p. |
+| CVaR diario (Wh·p) | 4150,74 | 3949,08 | 3799,38 | 3887,23 | −351,37 | −61,86 | +289,51 |
+| Pérdida del peor día (Wh·p) | 7645,57 | 6676,13 | 6390,53 | 6624,87 | −1255,03 | −51,26 | +1203,77 |
+| Compromisos incumplidos (carga·h) | 29 | 35 | 43 | 45 | +14 | +10 | −4 |
+| Solicitudes desatendidas (carga·h) | 220 | 229 | 229 | 230 | +9 | +1 | −8 |
+| Mínimo de bateria_02 (Wh) | 487,6 | 495,2 | 480,1 | 492,6 | −7,5 | −2,6 | +4,9 |
+| Calendarios únicos por origen | 1,97 | 1,88 | 4,43 | 4,28 | +2,46 | +2,40 | −0,05 |
+| Tiempo de control, sin inferencia (s) | 35,9 | 36,6 | 95,7 | 86,1 | +59,8 | +49,5 | −10,3 |
+
+Los mínimos de bateria_01 son 480 Wh en las cuatro celdas. El modo ampliado aumentó J y
+redujo el CVaR diario con ambos pronósticos. El aumento fue mayor con beta (+0,32 %)
+que con Chronos-2 (+0,07 %), así que el orden entre pronósticos se invierte: B − A es
++505,60 Wh·p y D − C es −214,55 Wh·p. Las diferencias se concentran en cuatro días; los
+otros 24 dan el mismo J en las cuatro celdas:
+
+| Día | C − A | D − B | D − C | (D − C) − (B − A) |
+|---|---:|---:|---:|---:|
+| 4 de marzo | +1255,03 | +51,26 | −234,33 | −1203,77 |
+| 5 de marzo | −339,01 | +135,29 | −14,56 | +474,30 |
+| 6 de marzo | −89,33 | 0 | +34,35 | +89,33 |
+| 17 de marzo | +80,00 | 0 | 0 | −80,00 |
+
+![Contrastes del experimento 2×2](figuras/t08_contrastes.png)
+
+*Figura 5. Efecto del modo ampliado con cada pronóstico e interacción, en J y en CVaR
+diario.*
+
+![ΔJ diario por modo](figuras/t08_diferencias_diarias.png)
+
+*Figura 6. ΔJ diario del modo ampliado con cada pronóstico.*
+
+Las decisiones cambian poco: C difiere de A en 13 de las 672 horas ejecutadas y D de B,
+en 10. Entre el 3 de marzo a las 12:00 y el 5 de marzo a las 18:00, C y D eligieron en
+9 de 10 orígenes un calendario propuesto por el cuantil 0,9, a menudo con reserva de
+0,25 o 0,5; A no usó reserva en todo el periodo y B, en dos orígenes. En ninguno
+de los cuatro contrastes entre pares hay compensación entre J y CVaR diario: C − A,
+D − B y B − A mejoran ambos, y D − C empeora ambos (Figura 7).
+
+![Servicio y riesgo respecto a A](figuras/t08_compensacion.png)
+
+*Figura 7. Diferencia de J y de CVaR diario de cada celda respecto a A.*
+
 ## 5. Discusión
 
 **Un mejor pronóstico no implica, por sí solo, más servicio.** Chronos-2 reduce el
@@ -449,11 +566,27 @@ mediana pesimista deja cargas sin comprometer, que no se encienden aunque luego
 sobre energía. Una mediana optimista compromete cargas que después se desconectan
 (35 compromisos incumplidos con Chronos-2 y 29 con beta). La reserva casi nunca se
 activa (ρ = 0 en 222 de 224 decisiones) y el peso terminal calibrado es λ_T = 0.
-Por eso el controlador usa sobre todo la mediana, y la mejor calibración de los
-cuantiles de Chronos-2 tiene pocas vías para influir en la decisión. Para
-aprovechar la distribución completa harían falta candidatos construidos con otros
-cuantiles o una puntuación sensible a las colas. Sería una extensión, no parte de
-este experimento.
+Por eso el modo original usa sobre todo la mediana, y la mejor calibración de los
+cuantiles de Chronos-2 tiene pocas vías para influir en la decisión. El experimento
+2×2 explora esa vía con candidatos construidos con otros cuantiles.
+
+**Más candidatos no favorecieron a Chronos-2.** Cabía esperar que un pronóstico mejor
+calibrado sacara más provecho de los cuantiles extremos. En esta muestra ocurrió lo
+contrario: el modo ampliado añadió 906,69 Wh·p con beta y 186,55 Wh·p con Chronos-2. No
+conviene leerlo como superioridad de beta. El resultado depende casi por completo del
+4 de marzo, con una interacción de −1203,77 Wh·p, y ese día A tiene el J más bajo de las
+cuatro celdas, de modo que beta tenía más por recuperar. Lo que sí muestra es que el
+orden entre pronósticos no se sostiene al cambiar el controlador. Además, con beta,
+cambiar de controlador aportó más que cambiar de pronóstico con el modo original
+(+906,69 frente a +505,60 Wh·p).
+
+**El modo ampliado no demuestra un beneficio de la aversión al riesgo.** El CVaR diario
+bajó un 8,47 % en C y un 1,57 % en D, pero con λ_R = 0 la puntuación no lo incluye: la
+reducción es un efecto colateral de elegir por J esperado entre más calendarios. No hubo
+compensación entre beneficio medio y riesgo, aunque el modo sí tiene costos. Los
+compromisos incumplidos suben de 29 a 43 con beta y de 35 a 45 con Chronos-2, porque
+incumplir un compromiso no resta en la puntuación. El servicio se desplaza de la
+prioridad 1 a la 2, y el tiempo de control se multiplica por 2,4 a 2,7.
 
 **La referencia reactiva no acota al MPC.** Con información perfecta de la hora en
 curso, la heurística reactiva deja menos energía sin atender (10,93 %). Aun así,
@@ -483,6 +616,10 @@ compartidos) y bajo la misma realización meteorológica.
   idealización.
 - La evaluación cubre 28 días de marzo de 2025 con una sola realización
   meteorológica.
+- Marzo orientó el diseño del modo ampliado, así que el experimento 2×2 no es una
+  validación confirmatoria. No hay un periodo independiente, porque la demanda sintética
+  termina el 30 de marzo.
+- La inversión entre pronósticos depende de cuatro días, y sobre todo de uno.
 - La beta se parametriza con dos formas y escala aprendida, en lugar de la beta4 del
   artículo.
 - Chronos-2 se usa sin ajuste. No puede descartarse que haya visto datos semejantes
@@ -506,17 +643,22 @@ significancia ni se afirman beneficios en campo.
    +0,16 p.p. de S_pond. Se concentró en los pocos días con escasez de energía. Las
    cargas críticas se atendieron al 100 % con ambos pronósticos.
 4. La traducción de la calidad predictiva en servicio depende del diseño del
-   controlador. Con compromisos fijos, reservas casi inactivas y λ_T = 0, el
-   controlador aprovecha sobre todo la mediana del pronóstico.
-5. Bajo estos supuestos, Chronos-2 aporta una mejora modesta y no concluyente en
-   servicio, y una mejora clara en calidad predictiva. El éxito del trabajo no
-   dependía de que Chronos-2 ganara.
+   controlador. Con compromisos fijos, reservas casi inactivas y λ_T = 0, el modo
+   original aprovecha sobre todo la mediana del pronóstico.
+5. El modo ampliado mejoró J y el CVaR diario con ambos pronósticos, sin compensación
+   entre ellos, a cambio de más compromisos incumplidos y más cómputo. Aportó más con
+   beta (+906,69 Wh·p) que con Chronos-2 (+186,55 Wh·p) e invirtió el orden entre
+   pronósticos. Como λ_R = 0, no demuestra un beneficio de la aversión al riesgo.
+6. Bajo estos supuestos, Chronos-2 aporta una mejora clara en calidad predictiva y una
+   mejora modesta y no concluyente en servicio, que no se mantiene al cambiar el
+   controlador. El éxito del trabajo no dependía de que Chronos-2 ganara.
 
 **Trabajo futuro:**
 
-- extender la evaluación a otros meses y estaciones, con varias realizaciones;
+- extender la evaluación a otros meses y estaciones, con varias realizaciones, y
+  contrastar el modo ampliado en un periodo independiente;
 - usar demanda medida;
-- diseñar candidatos que aprovechen toda la distribución pronosticada;
+- penalizar los compromisos incumplidos en la puntuación del controlador;
 - analizar la sensibilidad a la capacidad de almacenamiento.
 
 ## Referencias
@@ -596,6 +738,9 @@ significancia ni se afirman beneficios en campo.
 - Pinson, P.; Madsen, H.; Nielsen, H. Aa.; Papaefthymiou, G.; Klöckl, B. (2009). From
   probabilistic forecasts to statistical scenarios of short-term wind power
   production. *Wind Energy*, 12(1), 51–62. https://doi.org/10.1002/we.284
+- Rockafellar, R. T.; Uryasev, S. (2002). Conditional value-at-risk for general loss
+  distributions. *Journal of Banking & Finance*, 26(7), 1443–1471.
+  https://doi.org/10.1016/S0378-4266(02)00271-6
 - Van der Meer, D. W.; Widén, J.; Munkhammar, J. (2018). Review on probabilistic
   forecasting of photovoltaic power production and electricity consumption.
   *Renewable and Sustainable Energy Reviews*, 81, 1484–1512.

@@ -64,6 +64,31 @@ el nuevo MPC obtuvo **286 406,57 Wh·p** frente a 286 220,02 Wh·p del original
 se concentró en dos días y no demuestra un beneficio por aversión al riesgo:
 el peso seleccionado es cero y el nuevo modo considera más candidatos.
 
+### Experimento 2×2
+
+T08 cruza los dos pronósticos con los dos modos del controlador, con los parámetros
+de T07 (α = 0,9 y λ_R = 0) y los mismos pronósticos en cada modo:
+
+| Indicador | A: beta, original | B: Chronos-2, original | C: beta, CVaR | D: Chronos-2, CVaR |
+|---|---:|---:|---:|---:|
+| J (Wh·p) | 285 714,42 | 286 220,02 | 286 621,12 | 286 406,57 |
+| CVaR diario de pérdida (Wh·p) | 4150,74 | 3949,08 | 3799,38 | 3887,23 |
+| Compromisos incumplidos (carga·h) | 29 | 35 | 43 | 45 |
+| Atención de cargas críticas | 100 % | 100 % | 100 % | 100 % |
+
+El modo CVaR mejoró J y el CVaR diario con ambos pronósticos, sin compensación entre
+ellos: **+906,69 Wh·p con beta** (C − A) y **+186,55 Wh·p con Chronos-2** (D − B). La
+ventaja de Chronos-2 sobre beta cambia de signo, de +505,60 a −214,55 Wh·p, y la
+interacción es de −720,14 Wh·p. Las cuatro combinaciones coinciden en 24 de los 28 días
+y la interacción se concentra en el 4 de marzo.
+
+Estos resultados son **exploratorios**: marzo ya orientó esta extensión y no hay un
+periodo independiente. No demuestran que beta sea mejor ni que la aversión al riesgo
+ayude, porque λ_R = 0 solo amplía los calendarios candidatos. Muestran que el orden
+entre pronósticos no se sostiene al cambiar el controlador.
+
+![Contrastes del experimento 2×2](docs/figuras/t08_contrastes.png)
+
 ## Ejecutar el experimento
 
 Se necesita [uv](https://docs.astral.sh/uv/getting-started/installation/).
@@ -167,6 +192,21 @@ baterías y resumen de métricas en PNG y SVG, además de los datos y un informe
 para verificarlas. Se generan localmente en `results/comparacion_mpc_chronos/`,
 una carpeta ignorada por Git. El [detalle de resultados](docs/IDEA.md#comparación-posterior-de-los-mpc-con-chronos-2)
 incluye los indicadores y sus límites.
+
+### Repetir el experimento 2×2
+
+Se necesita una carpeta de salida nueva; no depende de otras carpetas de `results/`.
+La campaña registrada tardó unos 5 minutos en CPU:
+
+```powershell
+uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --salida results/t08_2x2
+```
+
+La raíz de la salida contiene `tabla_2x2.csv`, `tabla_2x2.md`, `contrastes.csv`,
+`diario_2x2.csv`, tres figuras y `resumen.json`; `original/` y `cvar/` guardan las
+salidas de T05 de cada modo. El comando falla si A, B, D o la referencia no reproducen
+las cifras publicadas. El [protocolo](docs/IDEA.md#experimento-22-t08) detalla el diseño,
+las verificaciones y los límites.
 
 ## Ejecutar las pruebas
 
