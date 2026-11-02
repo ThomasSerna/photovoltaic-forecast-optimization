@@ -320,6 +320,29 @@ El aumento de \(J\) fue 0.0652 % y se concentró en el 4 y el 5 de marzo (+51.25
 
 La comparación usó 672 horas y 112 orígenes de Chronos-2. Los cuantiles crudos y corregidos coincidieron exactamente; no se detectaron filtraciones ni violaciones físicas, con errores máximos de \(5.69\times10^{-14}\) Wh en el bus y \(2.28\times10^{-13}\) Wh en baterías. Pasaron seis pruebas automatizadas de la comparación. La ejecución tardó 370.6 s sin inferencia de Chronos; este tiempo no es comparable como mejora de velocidad frente a T05. El informe registra hashes de entradas, código y archivos generados.
 
+### Experimento 2×2 (T08)
+
+[T08](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/12) cruza los dos pronosticadores con los dos modos del controlador, del 3 al 30 de marzo de 2025, con la misma demanda, física, estado inicial y cronología:
+
+| Celda | Pronóstico | Controlador |
+|---|---|---|
+| A | Beta | Original |
+| B | Chronos-2 | Original |
+| C | Beta | CVaR (\(\alpha=0.9\), \(\lambda_R=0\)) |
+| D | Chronos-2 | CVaR (\(\alpha=0.9\), \(\lambda_R=0\)) |
+
+**Alcance.** Los parámetros son los que fijó T07 con desarrollo; en marzo no se ajusta nada. Con \(\lambda_R=0\) el modo CVaR no penaliza el riesgo: elige el mayor \(J\) esperado entre más calendarios. Por eso C − A y D − B miden el efecto de añadir candidatos con los cuantiles 0.1 y 0.9, no el de la aversión al riesgo. No se prueban pesos positivos en marzo, porque sería ajustar sobre el periodo de prueba; el ajuste de T07 ya mostró que esos pesos empatan o empeoran el CVaR diario. Marzo orientó esta extensión, de modo que la reevaluación es **exploratoria** y no constituye una validación confirmatoria. No hay periodo independiente: `reserva_no_usada` tiene irradiancia, pero la demanda sintética termina el 30 de marzo.
+
+```powershell
+uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --salida results/t08_2x2
+```
+
+- **Ejecución.** `scripts/experimento_2x2.py` no modifica `src/`: llama dos veces a `experimento.evaluar`, una por modo, con proveedores memorizados. Cada origen tiene una sola inferencia por proveedor, así que A/C y B/D reciben exactamente los mismos cuantiles. Cada celda conserva sus propios estados de batería.
+- **Verificaciones.** Física y pareo de T05 en cada modo; `verificar_pareo` también entre modos; cuantiles crudos, corregidos y escenarios idénticos en A/C y B/D; referencia reactiva igual en ambos pasos; repetición inicial con proveedores sin memoria. Con \(\lambda_R=\lambda_T=0\) y el mismo estado, los candidatos CVaR contienen a los originales, así que en el primer origen la puntuación de C no puede ser menor que la de A, ni la de D que la de B. El comando falla si A, B y la referencia no reproducen las cifras de T05, o si B y D no reproducen la comparación anterior con la precisión publicada.
+- **Indicadores.** Los de `metricas_servicio`, más el CVaR diario de la pérdida realizada, el peor día, los mínimos de batería, el tiempo de control sin inferencia y los calendarios únicos por origen. La columna `cuantil` de `decisiones.csv` no mide el uso de las colas, porque un calendario idéntico al de la mediana se registra como q0.1; se cuentan en cambio las horas ejecutadas con \(x\) distinto.
+- **Contrastes.** C − A, D − B, B − A, D − C y la interacción (D − C) − (B − A) sobre totales. Por día solo se calculan para \(J\) y la pérdida, porque el CVaR no se suma por días. Se describen media, mediana, extremos y días a favor y en contra, sin pruebas de significancia. Hay compensación cuando \(J\) y el CVaR diario suben a la vez o bajan a la vez.
+- **Exportaciones.** `original/` y `cvar/` guardan las salidas de T05 de cada modo. La raíz contiene `tabla_2x2.csv`, `tabla_2x2.md`, `contrastes.csv`, `diario_2x2.csv`, las figuras `contrastes`, `diferencias_diarias` y `compensacion` en PNG y SVG, y `resumen.json` con parámetros, semillas y hashes. No depende de otras carpetas de `results/`.
+
 **Indicadores principales** (calculados sobre ejecución realizada):
 
 | Tipo | Indicador |
@@ -359,6 +382,7 @@ La implementación puede reunir funciones cortas en menos archivos si resulta m�
 | **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
 | **T06 — MPC sensible al riesgo** ([#10](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/10)) | Modo CVaR configurable, selección de calendarios y registro reproducible | **Implementada; calibrada en T07** |
 | **T07 — Calibración CVaR** ([#11](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/11)) | Calibrar y validar el riesgo con desarrollo | **Completada y verificada en CPU** |
+| **T08 — Experimento 2×2** ([#12](https://github.com/ThomasSerna/photovoltaic-forecast-optimization/issues/12)) | Cruzar pronóstico y controlador, exportar tabla, figuras y parámetros, y actualizar el artículo | **Implementada; campaña pendiente** |
 
 Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 documenta el experimento del MPC original.
 
