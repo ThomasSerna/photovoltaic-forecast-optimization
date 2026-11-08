@@ -1,4 +1,4 @@
-"""T03: física horaria corregida de IDEA.md §4, basada en Acuña et al. (2021).
+"""Física horaria corregida de IDEA.md §4, basada en Acuña et al. (2021).
 
 Energías en Wh y potencias en W; paso fijo de 1 h. Eficiencias, límites de
 potencia y reparto por identificador son adaptaciones del proyecto, no una
@@ -191,12 +191,12 @@ def _seleccionar(cargas, fv_wh, baterias, estado, potencia_max_w, calendario_fij
 def simular(demanda, irradiancia, configuracion, *, estado_inicial=None, compromisos=None, reserva=0):
     """Simula una trayectoria explícita sin modificar entradas ni consultar otras fuentes.
 
-    `configuracion` procede de cargar_caso/cargar_configuracion (T01). `demanda`
+    `configuracion` procede de cargar_caso/cargar_configuracion. `demanda`
     conserva su rejilla completa de equipos y horas; `irradiancia` aporta t y
     ghi_w_m2. `compromisos`, si existe, aporta t, carga_id y x para esa misma
     rejilla. Los t enteros consecutivos pueden empezar en cualquier hora >= 0.
     `reserva` en [0, 1] protege esa fracción de la capacidad utilizable individual
-    solo ante cargas de prioridad < 3; genera candidatos de T04. Una reserva
+    solo ante cargas de prioridad < 3; genera candidatos del MPC. Una reserva
     no nula es incompatible con compromisos fijos, evaluados sin otra reserva.
 
     Devuelve tablas cargas/horas/baterias, estado_final por batería y resumen

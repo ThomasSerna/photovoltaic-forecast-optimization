@@ -1,4 +1,4 @@
-"""Evaluación pareada de T05 con dobles: métricas a mano, pareo, filtraciones y repetición."""
+"""Evaluación pareada con dobles: métricas a mano, pareo, filtraciones y repetición."""
 
 import json
 import math
@@ -242,7 +242,7 @@ def test_reproducibilidad_detecta_un_pronosticador_inestable():
 
 @pytest.fixture
 def comando(tmp_path, monkeypatch):
-    """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2 y TimesFM."""
+    """Comando de la evaluación sobre el caso de anticipación, con dobles en lugar de Chronos-2 y TimesFM."""
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
     caso.configuracion["semilla"] = 20261018
     caso.configuracion["pronosticos"].update(revision="a" * 40, revision_timesfm="b" * 40, dispositivo="cpu")
@@ -254,7 +254,7 @@ def comando(tmp_path, monkeypatch):
     monkeypatch.setattr("src.pronosticos.cargar_chronos", lambda revision, dispositivo: object())
     monkeypatch.setattr("src.pronosticos.cargar_timesfm", lambda revision, dispositivo: object())
     monkeypatch.setattr("src.controlador.proveedores", lambda caso, pipeline, modelo=None: dobles)
-    salida = tmp_path / "t05"
+    salida = tmp_path / "evaluacion"
     monkeypatch.setattr(sys, "argv", ["experimento", "--config", str(config), "--salida", str(salida)])
     return config, salida, config.read_bytes()
 

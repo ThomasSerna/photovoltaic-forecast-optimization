@@ -1,7 +1,7 @@
-"""T04: escenarios empíricos y MPC heurístico común (adaptación de IDEA §§5–6).
+"""Escenarios empíricos y MPC heurístico común (adaptación de IDEA §§5–6).
 
 La reserva genera compromisos; su evaluación y ejecución conservan la física
-de T03. El artículo original no usa este MPC ni su puntuación esperada.
+del simulador. El artículo original no usa este MPC ni su puntuación esperada.
 """
 
 import math
@@ -201,7 +201,7 @@ def _unir_resultados(resultados, decisiones, pronosticos):
 def ejecutar_mpc(caso, pronosticar, *, inicio, fin, estado_inicial=None):
     """Recorre [inicio, fin); callback(historia_admisible, origen_utc, horizonte).
 
-    Devuelve las tablas de T03, decisiones y pronósticos crudos/corregidos con
+    Devuelve las tablas del simulador, decisiones y pronósticos crudos/corregidos con
     rangos y bloques. Solo las observaciones cerradas llegan al callback.
     """
     origen, fin, reloj = _periodo(caso, inicio, fin)
@@ -365,7 +365,7 @@ def main():
 
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
-    parser.add_argument("--salida", type=Path, default=Path("results/t04_calibracion"))
+    parser.add_argument("--salida", type=Path, default=Path("results/calibracion_terminal"))
     args = parser.parse_args()
     try:
         caso = cargar_caso(args.config)
@@ -392,7 +392,7 @@ def main():
                     correcciones=p["correcciones"], inicio_utc=[f.isoformat() for f in p["crudos"].index],
                     crudos=p["crudos"].to_numpy().tolist(), corregidos=p["corregidos"].to_numpy().tolist()))
         informe = dict(
-            alcance="T04: calibración pareada de desarrollo, no evaluación final",
+            alcance="calibración pareada del peso terminal en desarrollo, no evaluación final",
             inicio_utc=ensayo["inicio_utc"].isoformat(), fin_utc=ensayo["fin_utc"].isoformat(),
             lambda_terminal=elegido, pesos=list(PESOS_TERMINALES), duracion_s=duracion,
             criterio="máximo promedio de J realizado de beta y Chronos; empate por menor peso",
@@ -402,7 +402,7 @@ def main():
             uv_lock_sha256=sha256_de(Path(__file__).resolve().parents[1] / "uv.lock"),
             supuestos=["beta2: loc=0, escala=1.05*máximo positivo por hora de las últimas 336 h",
                        "rangos por columna con empates promedio; colas constantes en q0.1 y q0.9",
-                       "reservas solo al generar candidatos; física T03 en evaluación y ejecución",
+                       "reservas solo al generar candidatos; física del simulador en evaluación y ejecución",
                        "MPC heurístico adaptado, sin garantía de optimalidad o calibración conjunta"],
         )
         texto = json.dumps(informe, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
@@ -412,7 +412,7 @@ def main():
         temporal_informe = salida / "resumen.json.tmp"
         ruta_informe = salida / "resumen.json"
         try:
-            with NamedTemporaryFile(dir=args.config.parent, prefix=args.config.name + ".t04.",
+            with NamedTemporaryFile(dir=args.config.parent, prefix=args.config.name + ".calibracion.",
                                     suffix=".tmp", delete=False) as archivo:
                 temporal_config = Path(archivo.name)
             temporal_config.write_text(
