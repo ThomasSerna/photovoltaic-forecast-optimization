@@ -1,6 +1,6 @@
 # Pronósticos de Chronos-2 frente a una referencia beta en la planificación de un sistema fotovoltaico aislado
 
-**Borrador del artículo del curso Optimización 1 (T05 y T08).**
+**Borrador del artículo del curso Optimización 1.**
 Caso semisintético contextualizado en el Centro Educativo Rural El Rayo, Támesis
 (Antioquia). Integrantes: Thomas Serna, Juan Esteban Palacio y Jeronimo Gutierrez.
 
@@ -324,8 +324,8 @@ exploratoria: no sustituye a λ_R = 0 como resultado principal, y marzo no inter
 la elección.
 
 **Referencia reactiva.** Para interpretar los resultados se añade la heurística de
-T03 ejecutada hora a hora con la irradiancia realizada, sin compromisos. Equivale a
-conocer de antemano la energía FV de la hora en curso, de modo que es una referencia
+selección y despacho ejecutada hora a hora con la irradiancia realizada, sin
+compromisos. Equivale a conocer de antemano la energía FV de la hora en curso, de modo que es una referencia
 con información perfecta de la hora y no una alternativa admisible. No interviene en
 la diferencia principal B − A.
 
@@ -521,7 +521,7 @@ ni filtraciones. El error máximo es de 1,2·10⁻¹³ Wh en el bus y de 2,9·10
 batería. A/C y B/D recibieron cuantiles y escenarios idénticos. La repetición de las
 primeras 30 h coincidió exactamente en cada modo, y una segunda ejecución completa
 produjo las mismas tablas, salvo los tiempos medidos. A, B y la referencia reprodujeron
-las cifras de T05, y D, las de la comparación posterior a la calibración.
+las cifras de la evaluación original, y D, las de la comparación posterior a la calibración.
 
 **Tabla 3.** Celdas del experimento 2×2, del 3 al 30 de marzo de 2025.
 

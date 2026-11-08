@@ -18,16 +18,22 @@ El modo original se calibró en enero y se evaluó del 3 al 30 de marzo de 2025.
 El controlador ofrece el modo original y un modo sensible al riesgo mediante
 CVaR, usado con cualquiera de los dos pronosticadores. El modo original es el
 predeterminado. El modo CVaR permite penalizar la demanda no atendida y ponderada
-por prioridad en los peores escenarios. T07 fijó α = 0,9 y seleccionó λ_R = 0
-con datos de desarrollo: ese peso no aplica una penalización de riesgo.
+por prioridad en los peores escenarios. La calibración fijó α = 0,9 y seleccionó
+λ_R = 0 con datos de desarrollo: ese peso no aplica una penalización de riesgo.
 
-El MPC y el caso de Támesis son adaptaciones del proyecto; no constituyen una
-reproducción numérica del caso del artículo. El [protocolo](docs/IDEA.md) detalla
-estas diferencias y [docs/datos.md](docs/datos.md) describe datos y unidades.
+El modelo físico, el MPC y el caso de Támesis incluyen adaptaciones del proyecto;
+no constituyen una reproducción numérica del caso del artículo. Para continuar el
+desarrollo, consulte:
+
+- [Protocolo y modelo](docs/IDEA.md): ecuaciones, correspondencia con el artículo,
+  adaptaciones y experimentos.
+- [Datos y unidades](docs/datos.md): origen, supuestos y periodos del caso.
+- [Artículo del proyecto](docs/articulo.md): método, resultados y discusión de la
+  comparación con el MPC original.
 
 ## Resultados
 
-Evaluación T05 con el **MPC original**, en CPU sobre **28 días, 672 horas y 112
+Evaluación con el **MPC original**, en CPU sobre **28 días, 672 horas y 112
 orígenes por método**:
 
 | Indicador | Beta | Chronos-2 |
@@ -47,11 +53,11 @@ uso de información futura. Un pronóstico mejor no garantiza más servicio.
 ![Diferencia diaria de servicio ponderado entre Chronos-2 y beta](docs/figuras/diferencias_diarias.png)
 
 El [artículo del proyecto](docs/articulo.md) presenta las tablas, figuras y
-análisis de T05. Los resultados son exploratorios: usan demanda sintética,
-meteorología de reanálisis y una sola realización; no prueban significancia ni
+análisis de esta evaluación. Los resultados son exploratorios: usan demanda
+sintética, meteorología de reanálisis y una sola realización; no prueban significancia ni
 beneficios en una instalación real.
 
-En T07, la selección con seis semanas de desarrollo y validación en las dos
+La selección con seis semanas de desarrollo y validación en las dos
 semanas posteriores produjo **λ_R = 0** para ambos pronosticadores. La regla de
 validación se cumple frente a CVaR con peso cero porque es el mismo caso; no
 demuestra una mejora por penalización de riesgo. El modo CVaR con peso cero puede
@@ -66,8 +72,8 @@ el peso seleccionado es cero y el nuevo modo considera más candidatos.
 
 ### Experimento 2×2
 
-T08 cruza los dos pronósticos con los dos modos del controlador, con los parámetros
-de T07 (α = 0,9 y λ_R = 0) y los mismos pronósticos en cada modo:
+El experimento cruza los dos pronósticos con los dos modos del controlador, usando
+los parámetros calibrados (α = 0,9 y λ_R = 0) y los mismos pronósticos en cada modo:
 
 | Indicador | A: beta, original | B: Chronos-2, original | C: beta, CVaR | D: Chronos-2, CVaR |
 |---|---:|---:|---:|---:|
@@ -149,18 +155,18 @@ uv run --locked --extra pronosticos python -m src.experimento --config scripts/c
 Para usar el peso calibrado, indique en `--config` el archivo
 `results/t07_calibracion/configuracion_cvar.json` generado por la calibración.
 Este comando usa el periodo de evaluación de marzo. No use esos resultados para
-elegir o ajustar los parámetros: T07 seleccionó el peso con desarrollo.
+elegir o ajustar los parámetros: el peso se seleccionó con datos de desarrollo.
 `candidatos.csv` registra las métricas por calendario único y
 `planes_elegidos.csv` el calendario completo seleccionado en cada origen;
 `decisiones.csv` y `resumen.json` registran las decisiones y la configuración.
-El [protocolo](docs/IDEA.md#62-modo-sensible-al-riesgo-t06) explica el cálculo
+El [protocolo](docs/IDEA.md#62-modo-sensible-al-riesgo) explica el cálculo
 y sus límites.
 
 ### Calibrar el modo CVaR
 
-**T07 completada y verificada en CPU.** El protocolo ajusta un peso común a
-ambos pronosticadores con datos de desarrollo y lo valida en un periodo posterior
-de desarrollo. La campaña T07 utilizó marzo solo para la regresión del modo original.
+**Calibración verificada en CPU.** El protocolo ajusta un peso común a ambos
+pronosticadores con datos de desarrollo y lo valida en un periodo posterior de
+desarrollo. La campaña utilizó marzo solo para la regresión del modo original.
 
 Para repetir la calibración desde la raíz del repositorio, use una carpeta de
 salida nueva; la campaña registrada tardó 44,1 minutos en CPU:
@@ -174,11 +180,12 @@ la validación y las huellas de reproducibilidad. La configuración generada
 `configuracion_cvar.json` queda junto al informe y mantiene rutas válidas a los
 datos; la configuración original no se modifica. El archivo se genera incluso
 si la validación falla: consulte en el informe si se recomienda el peso antes
-de usarlo. El [protocolo de T07](docs/IDEA.md#calibración-y-validación-t07)
+de usarlo. El [protocolo de calibración](docs/IDEA.md#calibración-y-validación-del-riesgo)
 detalla los periodos, el criterio, los resultados y sus límites.
 
 La regresión del modo original reprodujo las 672 horas y 112 orígenes por
-pronosticador de T05 frente al controlador anterior a T06. Para repetirla:
+pronosticador de la evaluación frente al controlador previo al modo CVaR. Para
+repetirla:
 
 ```powershell
 uv run --locked --extra pronosticos python -m scripts.verificar_regresion_t07 --salida results/t07_regresion_original
@@ -190,13 +197,13 @@ checkout. El informe generado queda en `results/t07_regresion_original/resumen.j
 
 ### Comparar los dos controladores con Chronos-2
 
-**Comparación completada y verificada.** Una evaluación posterior a T07 compara
-el MPC original con el modo CVaR calibrado (α = 0,9, λ_R = 0), usando Chronos-2
-del 3 al 30 de marzo de 2025. Los pronósticos de la regresión T05 son idénticos
+**Comparación completada y verificada.** Una evaluación posterior a la calibración
+compara el MPC original con el modo CVaR calibrado (α = 0,9, λ_R = 0), usando Chronos-2
+del 3 al 30 de marzo de 2025. Los pronósticos de la regresión son idénticos
 en ambas trayectorias; no se carga Chronos ni se reajustan parámetros. Marzo ya
-se había analizado en T05, así que el contraste es exploratorio.
+se había analizado en la evaluación original, así que el contraste es exploratorio.
 
-Para repetirla se necesitan los resultados locales de calibración T07 y de la
+Para repetirla se necesitan los resultados locales de calibración del riesgo y de la
 regresión original, y una carpeta de salida nueva:
 
 ```powershell
@@ -220,8 +227,8 @@ uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --salida r
 
 La raíz de la salida contiene `tabla_2x2.csv`, `tabla_2x2.md`, `contrastes.csv`,
 `diario_2x2.csv`, tres figuras y `resumen.json`; `original/` y `cvar/` guardan las
-salidas de T05 de cada modo. El comando falla si A, B, D o la referencia no reproducen
-las cifras publicadas. El [protocolo](docs/IDEA.md#experimento-22-t08) detalla el diseño,
+salidas de la evaluación pareada de cada modo. El comando falla si A, B, D o la referencia no reproducen
+las cifras publicadas. El [protocolo](docs/IDEA.md#experimento-22) detalla el diseño,
 las verificaciones y los límites.
 
 Para repetir la sensibilidad a λ_R, con carpetas de salida nuevas (unos 16 y 10 minutos
