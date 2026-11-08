@@ -1,4 +1,4 @@
-"""Comprobación reproducible de HU-01; todavía no despacha energía."""
+"""Comprobación reproducible de los datos y la configuración; no despacha energía."""
 
 import argparse
 import hashlib
@@ -12,7 +12,7 @@ from .datos import cargar_caso, energia_diaria_wh
 from .demanda import WH_POR_KWH
 
 ESTADO = "DATOS_Y_CONFIGURACION_VALIDADOS_BAJO_SUPUESTOS"
-ALCANCE = "HU-01; no verifica balances FV/baterías, despacho ni MPC"
+ALCANCE = "preparación de datos y configuración; no verifica balances FV/baterías, despacho ni MPC"
 SUPUESTOS = [
     "demanda sintética programada común a A y B; no medición horaria",
     "fechas asignadas; calendario sin festivos ni vacaciones",
@@ -78,7 +78,7 @@ def main():
     sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
-    parser.add_argument("--salida", type=Path, default=Path("results/preparacion_hu01.json"))
+    parser.add_argument("--salida", type=Path, default=Path("results/preparacion.json"))
     args = parser.parse_args()
     try:
         caso = cargar_caso(args.config)

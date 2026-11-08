@@ -1,4 +1,4 @@
-"""Ensayo T02 con un proveedor pequeño: cronología, artefactos y repetición sin pesos."""
+"""Ensayo de pronóstico con un proveedor pequeño: cronología, artefactos y repetición sin pesos."""
 
 import importlib.metadata
 import json

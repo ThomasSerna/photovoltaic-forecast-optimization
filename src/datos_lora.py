@@ -1,4 +1,4 @@
-"""Datos horarios trazables para el experimento LoRA; nunca entrena ni modifica T01."""
+"""Datos horarios trazables para el experimento LoRA; nunca entrena ni modifica los datos del caso."""
 
 import argparse
 from copy import deepcopy

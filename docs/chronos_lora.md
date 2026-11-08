@@ -2,7 +2,7 @@
 
 Esta extensión compara el **mismo Chronos-2 antes y después de ajustar únicamente
 adaptadores LoRA**. Conserva el pronóstico univariado de GHI, el contexto de 336 h,
-el horizonte de 24 h, los nueve deciles, las correcciones físicas y el MPC de T05.
+el horizonte de 24 h, los nueve deciles, las correcciones físicas y el MPC de la evaluación original.
 Beta y la referencia reactiva permanecen en la comparación de marzo. El ajuste es
 una adaptación experimental del proyecto; no pertenece al modelo original de
 [Acuña et al. (2021)](https://doi.org/10.3390/en14102789).
@@ -53,7 +53,7 @@ El manifiesto verifica hashes, continuidad, unidad W/m², valores finitos no
 negativos, procedencia y particiones. Los hashes de JSON/CSV normalizan CRLF a LF
 para permitir clones con distintas terminaciones de línea; los gzip y los hashes
 de las respuestas originales conservan los bytes exactos. `available_at=fin_utc`
-sigue siendo la idealización de disponibilidad del reanálisis usada en T01.
+sigue siendo la idealización de disponibilidad del reanálisis usada en la preparación de datos.
 
 Para verificar o reconstruir los datos, desde la raíz y en el PC de preparación:
 
@@ -210,7 +210,7 @@ Menor MAE/RMSE/pinball representa menor error. Mayor J/S_pond representa más
 servicio; la cobertura se interpreta respecto al nominal 0.8. Son conclusiones
 distintas: un modelo puede mejorar el pronóstico y empeorar la decisión.
 
-Marzo ya fue inspeccionado en T05 y sigue siendo exploratorio. La reserva
+Marzo ya fue inspeccionado en la evaluación original y sigue siendo exploratorio. La reserva
 adicional no interviene en el ajuste LoRA, pero no se garantiza ausencia de datos
 semejantes en el preentrenamiento de Chronos-2. La demanda y el sistema son
 semisintéticos; estos resultados no acreditan beneficios reales en la escuela
@@ -262,7 +262,7 @@ y 112 orígenes por política):
 
 - 25 de los 28 días son idénticos. LoRA − base vale −201,52 Wh·p el 4 de marzo,
   +193,57 el 5 y −58,85 el 6: tres de los cuatro días en que base y beta ya
-  diferían en T05.
+  diferían en la evaluación original.
 - Frente a beta, LoRA suma +438,81 Wh·p (+0,15 %), algo menos que la base (+505,60).
 - LoRA es más conservador: compromete 13 carga·h menos e incumple 13 menos, con las
   mismas 229 solicitudes desatendidas. Eligió ρ = 0,25 en un origen; la base, en dos.
@@ -271,7 +271,7 @@ y 112 orígenes por política):
 - Verificaciones: cero violaciones físicas (error del bus ≤ 5,7·10⁻¹⁴ Wh y de batería
   ≤ 2,3·10⁻¹³ Wh), cero filtraciones, entradas comunes en los 112 orígenes y
   repetición exacta (30 h, 5 orígenes, 0 Wh). La base en GPU reproduce las cifras de
-  T05 en CPU: J = 286.220,02 Wh·p y MAE diurno de 64,20 W/m².
+  la evaluación original en CPU: J = 286.220,02 Wh·p y MAE diurno de 64,20 W/m².
 - Inferencia media por origen: 0,070 s la base y 0,056 s LoRA.
 
 **Abril–diciembre** (1.097 orígenes por modelo, cuantiles corregidos, inferencia
@@ -294,7 +294,7 @@ cuantiles crudos.
 no intervino en la selección del checkpoint. A cambio, estrecha los intervalos: su
 cobertura diurna queda por debajo del nominal, mientras la de la base quedaba por
 encima. En servicio, el cambio es prácticamente nulo (−0,02 % de J, concentrado en
-tres días). Se repite la conclusión de T05: un pronóstico mejor no garantiza más
+tres días). Se repite la conclusión de la evaluación original: un pronóstico mejor no garantiza más
 servicio con este controlador. Hay una sola realización, la demanda es sintética y
 marzo ya estaba inspeccionado, así que los resultados son exploratorios y no se
 aplican pruebas de significancia.

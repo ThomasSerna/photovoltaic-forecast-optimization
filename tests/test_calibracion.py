@@ -187,7 +187,7 @@ def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(publi
         escribir = Path.write_text
 
         def fallar_escritura(ruta, *args, **kwargs):
-            fallar = (ruta.match(config.name + ".t04.*.tmp") if fallo == "escritura_configuracion"
+            fallar = (ruta.match(config.name + ".calibracion.*.tmp") if fallo == "escritura_configuracion"
                       else ruta == temporal_informe)
             if fallar:
                 escribir(ruta, "archivo parcial", encoding="utf-8")
@@ -199,7 +199,7 @@ def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(publi
         reemplazar = Path.replace
 
         def fallar_reemplazo(ruta, destino):
-            fallar = (ruta.match(config.name + ".t04.*.tmp") if fallo == "reemplazo_configuracion"
+            fallar = (ruta.match(config.name + ".calibracion.*.tmp") if fallo == "reemplazo_configuracion"
                       else ruta == temporal_informe)
             if fallar:
                 raise OSError("reemplazo fallido")
@@ -214,7 +214,7 @@ def test_calibracion_fallida_no_publica_informe_ni_reemplaza_configuracion(publi
     assert error.value.code == 1
     assert not (salida / "resumen.json").exists()
     assert config.read_bytes() == original
-    assert not list(config.parent.glob(config.name + ".t04.*.tmp"))
+    assert not list(config.parent.glob(config.name + ".calibracion.*.tmp"))
     assert not temporal_informe.exists()
 
 
@@ -227,14 +227,14 @@ def test_calibracion_exitosa_publica_informe_y_configuracion_coherentes(publicac
     assert informe["configuracion"] == actualizada
     assert informe["configuracion_entrada"] == caso.configuracion == json.loads(original)
     assert informe["entradas_sha256"]["configuracion"]["sha256"] == hashlib.sha256(original).hexdigest()
-    assert not list(config.parent.glob(config.name + ".t04.*.tmp"))
+    assert not list(config.parent.glob(config.name + ".calibracion.*.tmp"))
     assert not (salida / "resumen.json.tmp").exists()
 
 
 @pytest.mark.parametrize("fallo", [False, True])
 def test_publicacion_conserva_entrada_con_el_antiguo_nombre_temporal(publicacion, monkeypatch, fallo):
     caso, config, salida, original = publicacion
-    sidecar = config.with_name(config.name + ".t04.tmp")
+    sidecar = config.with_name(config.name + ".calibracion.tmp")
     contenido = b"datos preexistentes que no deben modificarse\n"
     sidecar.write_bytes(contenido)
     caso.rutas["entrada_sidecar"] = sidecar
@@ -255,4 +255,4 @@ def test_publicacion_conserva_entrada_con_el_antiguo_nombre_temporal(publicacion
         controlador.main()
         assert json.loads(config.read_bytes())["lambda_terminal"] == 0.75
     assert sidecar.read_bytes() == contenido
-    assert not list(config.parent.glob(config.name + ".t04.*.tmp"))
+    assert not list(config.parent.glob(config.name + ".calibracion.*.tmp"))

@@ -1,7 +1,8 @@
-"""T05: evaluación pareada de beta (A) frente a Chronos-2 (B) en el periodo reservado.
+"""Evaluación pareada de beta (A) frente a Chronos-2 (B) en el periodo reservado.
 
-Reutiliza sin cambios la física de T03 y el MPC y los pronosticadores de T04 (IDEA
-§§4–7): solo cambia el pronóstico. La referencia reactiva aplica la heurística de T03
+Reutiliza sin cambios la física del simulador y el MPC y los pronosticadores del
+controlador (IDEA §§4–7): solo cambia el pronóstico. La referencia reactiva aplica la
+heurística del simulador
 con la irradiancia realizada de cada hora; tiene información perfecta de la hora en
 curso, por lo que es una referencia y no una alternativa admisible.
 """
@@ -56,7 +57,7 @@ def _periodo_evaluacion(caso, inicio, fin):
 
 
 def ejecutar_reactiva(caso, inicio, fin):
-    """Heurística T03 con la GHI realizada de cada hora y el estado configurado."""
+    """Heurística del simulador con la GHI realizada de cada hora y el estado configurado."""
     _, _, reloj = _periodo(caso, inicio, fin)
     demanda = caso.demanda.loc[caso.demanda["t"].isin(reloj["t"])]
     solar = caso.irradiancia_simulacion.loc[caso.irradiancia_simulacion["t"].isin(reloj["t"])]
@@ -134,7 +135,7 @@ def verificar_reproducibilidad(caso, pronosticadores, evaluacion):
 
     Solo compara horas ejecutadas por orígenes con horizonte completo en ambos
     recorridos: el último tramo del ensayo corto trunca H. Los cuantiles crudos
-    usan la tolerancia de repetición de T02 (rtol=1e-5, atol=1e-6).
+    usan la tolerancia de repetición del ensayo de pronóstico (rtol=1e-5, atol=1e-6).
     """
     config = caso.configuracion
     hora = pd.Timedelta(hours=1)
@@ -336,9 +337,9 @@ SUPUESTOS = [
     "ERA5 es reanálisis, no sensor local; available_at = fin del intervalo es una idealización",
     "beta2 por hora local (loc=0, escala=1.05×máximo positivo) y Chronos-2 zero-shot con la misma historia de 336 h",
     "escenarios con bloques y rangos comunes por origen; no garantizan calibración conjunta",
-    "MPC heurístico de T04 con lambda_terminal calibrado en desarrollo; sin garantía de optimalidad",
+    "MPC heurístico con lambda_terminal calibrado en desarrollo; sin garantía de optimalidad",
     "con calendario fijo no se encienden cargas no comprometidas (z ≤ x): un pronóstico pesimista reduce el servicio",
-    "referencia reactiva: heurística T03 con la GHI realizada de cada hora; información perfecta de la hora, no admisible",
+    "referencia reactiva: heurística del simulador con la GHI realizada de cada hora; información perfecta de la hora, no admisible",
     "28 días y una sola realización meteorológica: resultados exploratorios, sin pruebas de significancia",
 ]
 
@@ -580,7 +581,7 @@ def _registros(evaluacion):
 
 
 def main():
-    """Evalúa A/B en el periodo reservado y exporta tabla, gráficas y registro (T05)."""
+    """Evalúa A/B en el periodo reservado y exporta tabla, gráficas y registro."""
     import argparse
     import importlib.metadata
     import json
@@ -593,7 +594,7 @@ def main():
 
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
-    parser.add_argument("--salida", type=Path, default=Path("results/t05_evaluacion"))
+    parser.add_argument("--salida", type=Path, default=Path("results/evaluacion"))
     parser.add_argument("--adaptador", type=Path, help="Adaptador LoRA local; añade la comparación contra Chronos-2 base")
     parser.add_argument("--dispositivo", choices=("cpu", "cuda"), help="Sustituye el dispositivo de la configuración")
     args = parser.parse_args()
@@ -644,7 +645,7 @@ def main():
         if args.adaptador is not None:
             versiones["peft"] = importlib.metadata.version("peft")
         informe = dict(
-            alcance="T05: evaluación pareada A/B en el periodo reservado; resultados exploratorios",
+            alcance="evaluación pareada A/B en el periodo reservado; resultados exploratorios",
             hipotesis="Chronos-2 puede reducir el error de irradiancia y mejorar la demanda ponderada "
                       "atendida; también puede empatar o rendir peor (IDEA §1)",
             inicio_utc=evaluacion["inicio_utc"].isoformat(), fin_utc=evaluacion["fin_utc"].isoformat(),
@@ -669,7 +670,7 @@ def main():
                 diferencias_diarias_lora=resumen["diferencias_diarias_lora"],
                 tabla_lora=comparacion.astype(object).where(comparacion.notna(), None).to_dict("records"),
                 supuestos=SUPUESTOS + ["LoRA usa el mismo contexto, correcciones y MPC; no se recalibra el controlador",
-                                        "marzo de 2025 ya fue inspeccionado en T05; no constituye un nuevo test intacto"],
+                                        "marzo de 2025 ya fue inspeccionado en la evaluación original; no constituye un nuevo test intacto"],
             )
             informe["tiempos"]["carga_lora_s"] = carga_lora_s
             actuales = {p.name: sha256_de(p) for p in args.adaptador.iterdir()

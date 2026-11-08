@@ -1,11 +1,11 @@
 # Pronósticos de Chronos-2 frente a una referencia beta en la planificación de un sistema fotovoltaico aislado
 
-**Borrador del artículo del curso Optimización 1 (T05).**
+**Borrador del artículo del curso Optimización 1.**
 Caso semisintético contextualizado en el Centro Educativo Rural El Rayo, Támesis
 (Antioquia). Integrantes: Thomas Serna, Juan Esteban Palacio y Jeronimo Gutierrez.
 
 > Estado: borrador. Las secciones 3 a 6 se generaron a partir de
-> `results/t05_evaluacion_verificada/` (regenerable con el comando de la sección 3.6);
+> `results/evaluacion_verificada/` (regenerable con el comando de la sección 3.6);
 > sus cuatro figuras se copiaron a `docs/figuras/`. El resumen,
 > la introducción y la revisión de literatura se redactaron a partir de `docs/IDEA.md`,
 > de Acuña et al. (2021) y de la ficha de Chronos-2; el equipo debe revisarlos antes de
@@ -277,7 +277,7 @@ es una adaptación del proyecto: el artículo selecciona la solución determinis
 frecuente entre réplicas y menciona el control predictivo como extensión (§§3.1 y 6).
 
 **Referencia reactiva.** Para interpretar los resultados se añade la heurística de
-T03 ejecutada hora a hora con la irradiancia realizada, sin compromisos. Equivale a
+selección y despacho ejecutada hora a hora con la irradiancia realizada, sin compromisos. Equivale a
 conocer de antemano la energía FV de la hora en curso, de modo que es una referencia
 con información perfecta de la hora y no una alternativa admisible. No interviene en
 la diferencia principal B − A.
@@ -307,7 +307,7 @@ pruebas de significancia.
 El comando
 
 ```
-uv run --locked --extra pronosticos python -m src.experimento --salida results/t05_evaluacion
+uv run --locked --extra pronosticos python -m src.experimento --salida results/evaluacion
 ```
 
 ejecuta A, B y la referencia con el entorno fijado en `uv.lock`. Verifica:
@@ -324,7 +324,7 @@ Si alguna comprobación falla, no publica `resumen.json`.
 ## 4. Resultados
 
 Los valores proceden de la ejecución verificada el 19 de octubre de 2026
-(`results/t05_evaluacion_verificada/`). Esa carpeta está excluida de Git y se
+(`results/evaluacion_verificada/`). Esa carpeta está excluida de Git y se
 regenera con el comando anterior en una carpeta nueva; las figuras de esta sección son
 copias de las suyas, guardadas en `docs/figuras/`. Entorno: Python 3.12.15,
 chronos-forecasting 2.3.2, torch 2.14.1, SciPy 1.18.1 y CPU con Windows 11.

@@ -1,4 +1,4 @@
-"""Reservas operativas de IDEA.md §6; no modifican los mínimos físicos de T03."""
+"""Reservas operativas de IDEA.md §6; no modifican los mínimos físicos del simulador."""
 
 from copy import deepcopy
 

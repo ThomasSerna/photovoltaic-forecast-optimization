@@ -1,4 +1,4 @@
-"""Evaluación pareada de T05 con dobles: métricas a mano, pareo, filtraciones y repetición."""
+"""Evaluación pareada con dobles: métricas a mano, pareo, filtraciones y repetición."""
 
 import json
 import math
@@ -234,7 +234,7 @@ def test_instrumentacion_sincroniza_antes_y_despues_de_la_inferencia():
 
 @pytest.fixture
 def comando(tmp_path, monkeypatch):
-    """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
+    """Comando de la evaluación sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
     caso.configuracion["semilla"] = 20261018
     caso.configuracion["pronosticos"].update(revision="a" * 40, dispositivo="cpu")
@@ -245,7 +245,7 @@ def comando(tmp_path, monkeypatch):
     monkeypatch.setattr("src.datos.cargar_caso", lambda ruta: caso)
     monkeypatch.setattr("src.pronosticos.cargar_chronos", lambda revision, dispositivo: object())
     monkeypatch.setattr("src.controlador.proveedores", lambda caso, pipeline: dobles)
-    salida = tmp_path / "t05"
+    salida = tmp_path / "evaluacion"
     monkeypatch.setattr(sys, "argv", ["experimento", "--config", str(config), "--salida", str(salida)])
     return config, salida, config.read_bytes()
 
