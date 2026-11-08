@@ -30,6 +30,8 @@ desarrollo, consulte:
 - [Datos y unidades](docs/datos.md): origen, supuestos y periodos del caso.
 - [Artículo del proyecto](docs/articulo.md): método, resultados y discusión de la
   comparación con el MPC original.
+- [Experimentos en ramas](docs/ramas.md): TimesFM 3.0, t0-gamma, Chronos-2 ajustado
+  con LoRA y beta sin MPC, con sus resultados y enlaces a cada rama.
 
 ## Resultados
 

@@ -423,6 +423,8 @@ El resultado principal es la **diferencia pareada B−A** en servicio bajo la mi
 
 **Criterio de éxito del trabajo:** ejecutar ambos métodos de extremo a extremo, respetar la física, mostrar resultados reproducibles y explicar si Chronos-2 aporta o no una mejora bajo estos supuestos. **No** es necesario que Chronos-2 gane.
 
+**Experimentos en ramas:** las extensiones con TimesFM 3.0, t0-gamma, Chronos-2 ajustado con LoRA y beta sin MPC se desarrollaron en ramas aparte y no forman parte de esta evaluación. [Experimentos en ramas](ramas.md) resume sus diseños y resultados, y enlaza cada rama.
+
 ## 8. Implementación y estado
 
 Conservar `data/`, la ingesta/generación existente de `src/` y sus pruebas actuales. El modo original usa un peso terminal compartido; los parámetros físicos conservan sus supuestos. No crear API, base de datos, interfaz web, framework de servicios ni abstracciones innecesarias.
