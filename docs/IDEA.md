@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (21 de octubre de 2026):** **T01–T05 completadas** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). En la rama `t05-timesfm`, **análisis adicional C con TimesFM 3.0** verificado en CPU; en la rama `t05-t0gamma`, que incluye C, **análisis adicional D con t0-gamma** verificado en CPU (§§5 y 7).
+**Estado (21 de octubre de 2026):** **Experimento principal completado** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). En la rama `experiment/timesfm`, **análisis adicional C con TimesFM 3.0** verificado en CPU; en la rama `experiment/t0gamma`, que incluye C, **análisis adicional D con t0-gamma** verificado en CPU (§§5 y 7).
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución
@@ -22,9 +22,9 @@ Objetivos específicos: (1) generar pronósticos solares comparables; (2) implem
 
 **Hipótesis por evaluar, no resultado anticipado:** Chronos-2 puede reducir el error de irradiancia y mejorar la demanda ponderada atendida; también puede empatar o rendir peor. Un error predictivo menor no garantiza mejores decisiones.
 
-**Análisis adicional C — TimesFM 3.0** (rama `t05-timesfm`): es una adaptación del proyecto y no forma parte de la pregunta principal. Cambia únicamente el pronosticador por el checkpoint oficial `google/timesfm-3.0-pytorch`, sin entrenamiento, con el protocolo de T05 (§§5 y 7). Cada alternativa se compara con A; la pregunta y la hipótesis anteriores no cambian.
+**Análisis adicional C — TimesFM 3.0** (rama `experiment/timesfm`): es una adaptación del proyecto y no forma parte de la pregunta principal. Cambia únicamente el pronosticador por el checkpoint oficial `google/timesfm-3.0-pytorch`, sin entrenamiento, con el protocolo de la evaluación principal (§§5 y 7). Cada alternativa se compara con A; la pregunta y la hipótesis anteriores no cambian.
 
-**Análisis adicional D — t0-gamma** (rama `t05-t0gamma`): también es una adaptación del proyecto, con el mismo alcance que C. Cambia únicamente el pronosticador por el checkpoint oficial `theforecastingcompany/t0-gamma`, sin entrenamiento, con el protocolo de T05 (§§5 y 7). Se compara con A, como B y C.
+**Análisis adicional D — t0-gamma** (rama `experiment/t0gamma`): también es una adaptación del proyecto, con el mismo alcance que C. Cambia únicamente el pronosticador por el checkpoint oficial `theforecastingcompany/t0-gamma`, sin entrenamiento, con el protocolo de la evaluación principal (§§5 y 7). Se compara con A, como B y C.
 
 ## 2. Fuentes y fidelidad matemática
 
@@ -34,9 +34,9 @@ Se **preserva el problema** de decidir qué cargas encender, cómo utilizar pane
 
 La formulación física de este documento **corrige inconsistencias impresas** y explicita supuestos; no es una transcripción literal de las ecuaciones del artículo. La correspondencia se detalla en §4.5. **Nunca** se relajan límites para hacer que una alternativa produzca mejores resultados.
 
-## 3. Datos existentes: T01 completada
+## 3. Datos existentes
 
-Se **reutiliza** el código, los CSV y la configuración ya publicados; no se reimplementa la ingesta. El comando de preparación `energy-project` valida datos, sin simular energía. El ensayo T02 ejecuta Chronos-2 mediante `python -m src.pronosticos`, con el extra `pronosticos`; T03 expone `src.simulador.simular` desde Python.
+Se **reutiliza** el código, los CSV y la configuración ya publicados; no se reimplementa la ingesta. El comando de preparación `energy-project` valida datos, sin simular energía. El ensayo de pronóstico ejecuta Chronos-2 mediante `python -m src.pronosticos`, con el extra `pronosticos`; el simulador expone `src.simulador.simular` desde Python.
 
 Datos principales en `data/`:
 
@@ -118,30 +118,30 @@ No se redondean flujos ni estados intermedios. Se verifican balances y límites 
 
 Se consultaron §2.2 (pp. 5–6) y los algoritmos 1–2 (p. 8) del [PDF oficial](https://mdpi-res.com/d_attachment/energies/energies-14-02789/article_deploy/energies-14-02789.pdf). Los índices día/periodo del artículo se reúnen en la secuencia horaria \(t\).
 
-| Referencia | Interpretación física adoptada en T03 |
+| Referencia | Interpretación física adoptada en el simulador |
 |---|---|
 | (1)–(3), (7) | Límites individuales explícitos y descarga limitada por energía útil, sin variable auxiliar \(Q\) ni big-M. Con \(c_{\min}>0\) y \(Q\) binaria, (1)–(2) imprimen \(Q\le C/c_{\min}\le Q+1\), imponiendo inadvertidamente \(C\le2c_{\min}\); no se incorpora esa cota ajena a la capacidad configurada. |
 | (4) | Para \(E=Q=1\), la desigualdad impresa exige \(BD\ge C-c_{\min}\), frente al máximo descrito en el texto. Además, (5) define \(C\) después del flujo del mismo periodo. Se limita la descarga con el estado **anterior**, \(d\le\eta_d(C_t-C_{\min})\). |
 | (5)–(6) | Continuidad por batería y conservación en el bus. Se añaden eficiencias individuales y vertido explícito; no se crea energía ni se descuenta una carga rechazada. |
 | (8)–(9) | Servicio completo y solicitudes binarias: \(z\le x\le r\). La (9) impresa compara una decisión binaria con demanda en Wh; se usa el indicador \(r\), conservando la energía en el balance. |
 | (10) | Beneficio ponderado de las cargas efectivamente atendidas. La selección voraz busca ese criterio sin certificar un máximo global. |
-| Algoritmos 1–2 | El primero despacha usando un orden por consumo y el segundo selecciona según prioridad. Para evitar descontar energía de una selección provisional distinta, T03 selecciona primero y despacha una sola vez. Prioridad, consumo, desempate por identificador y reparto por batería quedan fijados explícitamente. |
+| Algoritmos 1–2 | El primero despacha usando un orden por consumo y el segundo selecciona según prioridad. Para evitar descontar energía de una selección provisional distinta, el simulador selecciona primero y despacha una sola vez. Prioridad, consumo, desempate por identificador y reparto por batería quedan fijados explícitamente. |
 
 La conversión FV, el paso horario, las eficiencias, los límites de potencia y la topología común son supuestos físicos del caso semisintético. Estas decisiones concretan una adaptación consistente; no validan numéricamente el caso original de Volcanes ni el comportamiento eléctrico dentro de una hora.
 
-### 4.6. Interfaz reproducible de T03
+### 4.6. Interfaz reproducible del simulador
 
-`simular(demanda, irradiancia, configuracion, *, estado_inicial=None, compromisos=None, reserva=0)` recibe la demanda existente, una tabla explícita `t, ghi_w_m2` y la configuración validada de T01. El estado opcional es `{bateria_id: energia_wh}`; los compromisos opcionales son `t, carga_id, x` para todas las filas de demanda. Se validan horas consecutivas, claves, dominios y límites individuales, sin modificar entradas ni buscar meteorología por cuenta propia. T04 añade `reserva` en [0, 1] solo para generar candidatos (§6); cero conserva el comportamiento de T03 y una reserva no nula se rechaza junto con compromisos fijos.
+`simular(demanda, irradiancia, configuracion, *, estado_inicial=None, compromisos=None, reserva=0)` recibe la demanda existente, una tabla explícita `t, ghi_w_m2` y la configuración validada por la preparación de datos. El estado opcional es `{bateria_id: energia_wh}`; los compromisos opcionales son `t, carga_id, x` para todas las filas de demanda. Se validan horas consecutivas, claves, dominios y límites individuales, sin modificar entradas ni buscar meteorología por cuenta propia. El MPC añade `reserva` en [0, 1] solo para generar candidatos (§6); cero conserva el comportamiento base del simulador y una reserva no nula se rechaza junto con compromisos fijos.
 
-Devuelve tablas `cargas` (solicitud, compromiso y servicio), `horas` (energías y vertido), `baterias` (estados y flujos individuales), el diccionario `estado_final` y un `resumen` de energías, \(J\) y \(S_{\mathrm{pond}}\). No escribe archivos. El ejemplo de README muestra la continuación mediante estados y la ejecución de un calendario fijo. La rutina es determinista y no introduce semillas nuevas; los datos sintéticos conservan las semillas de T01. Las pruebas incluyen casos manuales, heterogeneidad y recorrido completo de desarrollo; la comparación de control y pronósticos pertenece a T04–T05.
+Devuelve tablas `cargas` (solicitud, compromiso y servicio), `horas` (energías y vertido), `baterias` (estados y flujos individuales), el diccionario `estado_final` y un `resumen` de energías, \(J\) y \(S_{\mathrm{pond}}\). No escribe archivos. El ejemplo de README muestra la continuación mediante estados y la ejecución de un calendario fijo. La rutina es determinista y no introduce semillas nuevas; los datos sintéticos conservan las semillas de la preparación de datos. Las pruebas incluyen casos manuales, heterogeneidad y recorrido completo de desarrollo; la comparación de control y pronósticos corresponde al MPC y a la evaluación pareada.
 
 ## 5. Pronósticos y escenarios: única diferencia A/B
 
-**A — Beta:** T04 fija una beta escalada de dos parámetros por hora local: masa de cero empírica y ajuste por máxima verosimilitud de los positivos con `loc=0` y `scale=1.05*max(positivos)`. Se usan las mismas **336 horas consecutivas, terminadas y disponibles** que recibe Chronos. Si todos los valores son cero se devuelve cero; si los positivos son constantes se usa una masa puntual mezclada con cero. Un ajuste inválido o contexto incompleto produce error, sin cambiar de familia durante evaluación. La escala es un soporte estadístico aprendido, no un máximo físico de GHI.
+**A — Beta:** se usa una beta escalada de dos parámetros por hora local: masa de cero empírica y ajuste por máxima verosimilitud de los positivos con `loc=0` y `scale=1.05*max(positivos)`. Se usan las mismas **336 horas consecutivas, terminadas y disponibles** que recibe Chronos. Si todos los valores son cero se devuelve cero; si los positivos son constantes se usa una masa puntual mezclada con cero. Un ajuste inválido o contexto incompleto produce error, sin cambiar de familia durante evaluación. La escala es un soporte estadístico aprendido, no un máximo físico de GHI.
 
 Se descartó el ajuste libre de cuatro parámetros tras un piloto de desarrollo con los orígenes locales 6 de enero de 2025 a las 00:00 y 12:00, y 13 de enero a las 00:00: 36 ajustes de las horas 06–17, cada uno con 14 positivos. Cuatro produjeron soporte negativo y once emitieron advertencias, aunque todos devolvieron cuantiles 0.1, 0.5 y 0.9 finitos. Los 36 ajustes escalados fueron válidos y no emitieron advertencias. Entorno: Python 3.12.14, SciPy 1.18.1, NumPy 2.5.4 y pandas 3.0.6. Esto justifica la adaptación prevista antes del test; no valida el ajuste estadístico en todos los orígenes. El caso original ajusta beta4 con datos distintos (§5 del paper); no se trasladan sus parámetros a Támesis. SciPy [documenta el problema no acotado del ajuste libre por máxima verosimilitud](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.beta.html).
 
-**B — Chronos-2:** usar el checkpoint oficial sin reentrenar ni ajustar pesos; cargarlo una sola vez, utilizar únicamente la historia disponible y emitir cuantiles para el horizonte. Valores iniciales: contexto **336 h**, horizonte **24 h** y cuantiles **0.1 a 0.9**. T02 verificó API, memoria y tiempo mediante dos orígenes de desarrollo y repetición del primero en CPU/FP32. Se fija `chronos-forecasting==2.3.2` y la revisión `29ec3766d36d6f73f0696f85560a422f50e8498c` de `amazon/chronos-2`; configuración, resultados, versiones y hashes se registran en el informe del ensayo. Se exige contexto consecutivo completo, sin interpolar horas no disponibles. Esto no sustituye el backtest de evaluación de T05.
+**B — Chronos-2:** usar el checkpoint oficial sin reentrenar ni ajustar pesos; cargarlo una sola vez, utilizar únicamente la historia disponible y emitir cuantiles para el horizonte. Valores iniciales: contexto **336 h**, horizonte **24 h** y cuantiles **0.1 a 0.9**. Un ensayo verificó API, memoria y tiempo mediante dos orígenes de desarrollo y repetición del primero en CPU/FP32. Se fija `chronos-forecasting==2.3.2` y la revisión `29ec3766d36d6f73f0696f85560a422f50e8498c` de `amazon/chronos-2`; configuración, resultados, versiones y hashes se registran en el informe del ensayo. Se exige contexto consecutivo completo, sin interpolar horas no disponibles. Esto no sustituye el backtest de la evaluación pareada.
 
 **C — TimesFM 3.0 (análisis adicional):**
 - **Modelo y versión.** Checkpoint oficial `google/timesfm-3.0-pytorch`, sin entrenamiento ni ajuste. Se fija `timesfm[torch]==3.0.2` (código Apache-2.0, módulo `timesfm3`) y la revisión `43046b85ec22d584a13f8098c2ed39c889e129c2` (clave `pronosticos.revision_timesfm`). Los pesos son FP32: 330 710 976 parámetros, `model.safetensors` de 1,32 GB y sha256 LFS `a7592b0a8432baee54483254e5647856911ce69e09d09a9bb65904b2d98f17da`, idénticos a los del commit de subida `6455822f`.
@@ -150,7 +150,7 @@ Se descartó el ajuste libre de cuatro parámetros tras un piloto de desarrollo 
 - **Detalles internos.** El parche de entrada mide 32: el contexto se rellena internamente a 352 h con 16 ceros enmascarados. El parche de salida mide 64 y H=24 se recorta de él.
 - **Banderas.** Se desactivan el promediado simétrico (`use_symmetric_averaging`), el recorte a no negativos (`make_positive`) y el reordenamiento (`sort_quantiles`). Así los crudos llegan intactos y la única corrección es la común. La clase de benchmarks `TimesFM3Evaluator` activa las tres; el promediado simétrico cambia el pronóstico y no se usa.
 - **Preentrenamiento.** Según la ficha: GiftEvalPretrain sin fev-bench, Wikipedia Pageviews, Google Trends y datos sintéticos. No se afirma que no haya visto series semejantes.
-- **Lo que hereda sin recalibrar.** λ_T se calibró en T04 solo con A y B, y C lo hereda sin recalibrar.
+- **Lo que hereda sin recalibrar.** λ_T se calibró en desarrollo solo con A y B, y C lo hereda sin recalibrar.
 
 **D — t0-gamma (análisis adicional):**
 - **Modelo y versión.** Checkpoint oficial `theforecastingcompany/t0-gamma`, sin entrenamiento ni ajuste. Se fija `tfc-t0[torch]==0.6.0` (módulo `t0`) y la revisión `e08aee083778f1f32da4974c0a34276776a35c52` (clave `pronosticos.revision_t0`), único commit del repositorio. La ficha exige `tfc-t0>=0.6.0`, y el README de `tfc-t0` advierte que las versiones anteriores cargan t0-gamma sin error, pero con otras convenciones, y degradan el pronóstico sin avisar. `uv.lock` solo añade `tfc-t0`, `jaxtyping`, `rotary-embedding-torch` y `wadler-lindig`; torch, transformers, huggingface-hub, numpy, Chronos y TimesFM no cambian.
@@ -161,7 +161,7 @@ Se descartó el ajuste libre de cuatro parámetros tras un piloto de desarrollo 
 - **Banderas.** `predict` ofrece cuatro ajustes, desactivados por defecto, aunque la documentación recomienda activarlos: recorte de faltantes iniciales (`trim_leading_missing`), promediado simétrico (`symmetric_averaging`), recorte a no negativos (`clip_nonnegative`) y redondeo a enteros (`snap_integers`). Se pasan los cuatro en `False` de forma explícita. **La GHI histórica es entera** (17 544 de 17 544 valores), así que `snap_integers` redondearía los crudos y `clip_nonnegative` los recortaría; el promediado simétrico se omitiría igualmente, porque el mínimo de la historia es 0. En la prueba de humo, activarlos cambió los crudos hasta en 2.87 W/m². Así, la única corrección es la común, como en A, B y C.
 - **Posprocesado no desactivable.** La biblioteca sustituye por 0 cualquier valor no finito y lo registra con un aviso. La comprobación de finitud no puede detectarlo; por eso se revisó el stderr de las ejecuciones, y no hubo avisos.
 - **Preentrenamiento.** La ficha y el blog no documentan el corpus; remiten al informe técnico (arXiv 2609.24559). No se afirma que no haya visto series semejantes.
-- **Lo que hereda sin recalibrar.** D también hereda λ_T=0 de T04 sin recalibrar.
+- **Lo que hereda sin recalibrar.** D también hereda λ_T=0 de la calibración del peso terminal, sin recalibrar.
 
 Los proveedores entregan **los mismos cuantiles para los mismos tiempos**. Se aplica una corrección común: reordenar cruces, eliminar negativos y poner a cero intervalos completamente nocturnos según amanecer/ocaso calculados con Astral a partir de fecha y coordenadas. Se conservan los intervalos que cruzan esas fronteras y los pronósticos crudos; se reportan correcciones y rangos. Se supone horizonte sin obstáculos y observador a nivel del suelo. **No se impone techo superior artificial de GHI**: 1000 W/m² es referencia STC, no una cota física universal. La mediana sirve como pronóstico puntual. Esta política es una adaptación del proyecto, común a todas las ramas.
 
@@ -203,7 +203,7 @@ Para cada origen de pronóstico:
 
 El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energía útil restante; **no** forma parte de la métrica final \(J\). Los dos métodos tienen idéntico generador de candidatos, simulador, función de selección y actualización. **Solo cambian sus pronósticos y, legítimamente, las decisiones/estados resultantes.**
 
-`planificar_mpc(...)` devuelve los cuatro calendarios, sus puntuaciones y el compromiso elegido; los empates favorecen la menor reserva. Los calendarios idénticos reutilizan su evaluación. `ejecutar_mpc(caso, pronosticar, *, inicio, fin, estado_inicial=None)` recibe un callback `(historia_admisible, origen_utc, horizonte)` que devuelve cuantiles crudos; aplica las correcciones y escenarios comunes y entrega las tablas de T03, decisiones y pronósticos con sus diagnósticos. El calendario validado alinea UTC y `t`. Al terminar el periodo, \(H_{\mathrm{ef}}=\min(H,\text{horas restantes})\) y se ejecutan como máximo \(R\) horas restantes. Se concatenan solo resultados realizados y se recalcula \(S_{\mathrm{pond}}\) sobre sus totales. README incluye el ejemplo con beta y Chronos cargado una sola vez.
+`planificar_mpc(...)` devuelve los cuatro calendarios, sus puntuaciones y el compromiso elegido; los empates favorecen la menor reserva. Los calendarios idénticos reutilizan su evaluación. `ejecutar_mpc(caso, pronosticar, *, inicio, fin, estado_inicial=None)` recibe un callback `(historia_admisible, origen_utc, horizonte)` que devuelve cuantiles crudos; aplica las correcciones y escenarios comunes y entrega las tablas del simulador, decisiones y pronósticos con sus diagnósticos. El calendario validado alinea UTC y `t`. Al terminar el periodo, \(H_{\mathrm{ef}}=\min(H,\text{horas restantes})\) y se ejecutan como máximo \(R\) horas restantes. Se concatenan solo resultados realizados y se recalcula \(S_{\mathrm{pond}}\) sobre sus totales. README incluye el ejemplo con beta y Chronos cargado una sola vez.
 
 **Prueba de anticipación implementada:** en un caso artificial de dos horas y batería útil de 1 Wh, sin sol ahora, con carga actual de prioridad 1 y futura de prioridad 3, la decisión presente cambia si el pronóstico futuro —mediana y escenarios— pasa de 0 a 1 Wh solar. Las pruebas también cubren compromisos fijos, continuidad realizada, reservas heterogéneas, igualdad con proveedores idénticos y ausencia de información futura. Esto verifica la lógica anticipatoria del MPC, sin certificar optimalidad. El artículo selecciona soluciones frecuentes y propone MPC como extensión (§§3 y 6); este controlador y su puntuación son adaptaciones del proyecto.
 
@@ -211,18 +211,18 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
 
 **Diseño:** comparar A y B sobre exactamente las mismas fechas, demanda programada, capacidades, estado inicial, información histórica admisible y condiciones meteorológicas realizadas. Durante la simulación **no se igualan artificialmente** sus baterías después de cada decisión. No ajustar parámetros usando resultados finales del test.
 
-**Calibración T04:** usar únicamente 6–12 de enero de 2025, con fin exclusivo el 13. Probar \(\lambda_T\in\{0,0.25,0.5,0.75\}\), reutilizando pronósticos y rangos por origen entre pesos. Las ocho combinaciones `(proveedor, peso)` parten de idéntica inicialización y conservan estados continuos independientes. Elegir el peso que maximiza el promedio del **J realizado** de A y B; desempatar por el menor peso. `calibrar_mpc(caso, pipeline=None)` devuelve ocho resultados, sus tablas y pronósticos, fechas y peso elegido, sin modificar entradas. El comando `uv run --locked --extra pronosticos python -m src.controlador --salida results/t04_calibracion` verifica balances y límites con tolerancia de \(10^{-6}\) Wh y comprueba que entradas y código no cambiaron. Solo después prepara ambos archivos temporales, publica `resumen.json` y reemplaza la configuración con el peso elegido como último paso; si falla el reemplazo, retira el informe y conserva la configuración original. Se limpian los temporales tanto al terminar como ante un error. Registra fechas, puntuaciones, semillas, bloques, cuantiles crudos/corregidos, diagnósticos, versiones y hashes. Incluye tanto la configuración de entrada como la final; el hash del archivo de configuración describe la entrada anterior a su actualización. La salida debe ser nueva.
+**Calibración del peso terminal:** usar únicamente 6–12 de enero de 2025, con fin exclusivo el 13. Probar \(\lambda_T\in\{0,0.25,0.5,0.75\}\), reutilizando pronósticos y rangos por origen entre pesos. Las ocho combinaciones `(proveedor, peso)` parten de idéntica inicialización y conservan estados continuos independientes. Elegir el peso que maximiza el promedio del **J realizado** de A y B; desempatar por el menor peso. `calibrar_mpc(caso, pipeline=None)` devuelve ocho resultados, sus tablas y pronósticos, fechas y peso elegido, sin modificar entradas. El comando `uv run --locked --extra pronosticos python -m src.controlador --salida results/calibracion_terminal` verifica balances y límites con tolerancia de \(10^{-6}\) Wh y comprueba que entradas y código no cambiaron. Solo después prepara ambos archivos temporales, publica `resumen.json` y reemplaza la configuración con el peso elegido como último paso; si falla el reemplazo, retira el informe y conserva la configuración original. Se limpian los temporales tanto al terminar como ante un error. Registra fechas, puntuaciones, semillas, bloques, cuantiles crudos/corregidos, diagnósticos, versiones y hashes. Incluye tanto la configuración de entrada como la final; el hash del archivo de configuración describe la entrada anterior a su actualización. La salida debe ser nueva.
 
-**Ensayo CPU completado:** 28 orígenes por proveedor, 50 escenarios por origen y ocho recorridos de 168 h, en 1266.3 s con pesos en caché. Los cuatro pesos empataron: en beta, \(J=73192.486644\), \(S_{\mathrm{pond}}=0.9540504745\); en Chronos, \(J=73784.143168\), \(S_{\mathrm{pond}}=0.9617626074\). El promedio pareado fue 73488.314906 y el desempate fijó **\(\lambda_T=0\)** en la configuración común. No hubo violaciones físicas; errores máximos observados del bus \(2.8422\times10^{-14}\) Wh y de batería \(2.2738\times10^{-13}\) Wh (cotas redondeadas hacia arriba), menores que \(10^{-6}\) Wh. Se comprobaron los mismos bloques/semillas en A/B, cuantiles finitos, hashes de código y CSV y coherencia de la configuración final. En esa verificación pasaron **260 pruebas** con el entorno bloqueado. Registro local regenerable: `results/t04_calibracion_verificada/resumen.json`. Esto documenta calibración, **no** el backtest de T05 ni una conclusión general sobre la utilidad del término terminal o la superioridad de Chronos.
+**Ensayo CPU completado:** 28 orígenes por proveedor, 50 escenarios por origen y ocho recorridos de 168 h, en 1266.3 s con pesos en caché. Los cuatro pesos empataron: en beta, \(J=73192.486644\), \(S_{\mathrm{pond}}=0.9540504745\); en Chronos, \(J=73784.143168\), \(S_{\mathrm{pond}}=0.9617626074\). El promedio pareado fue 73488.314906 y el desempate fijó **\(\lambda_T=0\)** en la configuración común. No hubo violaciones físicas; errores máximos observados del bus \(2.8422\times10^{-14}\) Wh y de batería \(2.2738\times10^{-13}\) Wh (cotas redondeadas hacia arriba), menores que \(10^{-6}\) Wh. Se comprobaron los mismos bloques/semillas en A/B, cuantiles finitos, hashes de código y CSV y coherencia de la configuración final. En esa verificación pasaron **260 pruebas** con el entorno bloqueado. Registro local regenerable: `results/calibracion_terminal_verificada/resumen.json`. Esto documenta calibración, **no** el backtest de la evaluación pareada ni una conclusión general sobre la utilidad del término terminal o la superioridad de Chronos.
 
-**Evaluación T05 completada:** `uv run --locked --extra pronosticos python -m src.experimento --salida results/t05_evaluacion` (`src/experimento.py`).
+**Evaluación pareada completada:** `uv run --locked --extra pronosticos python -m src.experimento --salida results/evaluacion` (`src/experimento.py`).
 
 - **Diseño.** Ejecuta A y B en el periodo reservado (3 al 31 de marzo de 2025, fin exclusivo; 112 orígenes por rama), con los callbacks comunes de `controlador.proveedores` y el mismo estado inicial configurado. Después conserva estados independientes.
 - **Referencia reactiva.** Añade la heurística de §4.4 ejecutada con la GHI realizada de cada hora. Es una adaptación del proyecto con información perfecta de la hora en curso: sirve para interpretar, no es una alternativa admisible y no entra en B − A.
 - **Verificaciones.** Física de §4, incluida la dirección del despacho: carga agregada ≤ excedente FV y descarga agregada ≤ déficit. Mismo hash de contexto, bloques, rangos y semilla por origen. Contexto y bloques nunca posteriores al origen. Repetición exacta de las primeras horas con horizonte completo.
 - **Exportaciones.** Tabla, CSV, cuatro figuras y `resumen.json`. No modifica la configuración.
 
-**Ensayo CPU verificado** (`results/t05_evaluacion_verificada/resumen.json`, regenerable; 306 pruebas aprobadas):
+**Ensayo CPU verificado** (`results/evaluacion_verificada/resumen.json`, regenerable; 306 pruebas aprobadas):
 
 - **Pronóstico.** Chronos-2 mejora el pronóstico diurno: MAE 64.20 frente a 66.33 W/m², pinball 25.13 frente a 25.94 W/m² y cobertura 0.1–0.9 de 80.95 % frente a 76.98 % (nominal 80 %). En las seis primeras horas de cada origen, el MAE baja de 66.97 a 60.77 W/m².
 - **Servicio.** La mejora es pequeña: \(J_B-J_A=+505.599\) Wh·p (+0.18 %) y \(S_{\mathrm{pond}}\) 0.9328742419 frente a 0.9312263476. La diferencia se concentra en 4 de 28 días (+969.44, −488.86, −54.98 y +80.00 Wh·p); los otros 24 días son idénticos.
@@ -234,9 +234,9 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
 
 **Lectura del resultado.** Un pronóstico mejor no se traduce automáticamente en más servicio. Con calendario fijo (\(z\le x\)), una mediana pesimista deja cargas sin comprometer y una optimista compromete cargas que luego se desconectan: Chronos registró 35 compromisos incumplidos y beta, 29. El efecto neto depende de pocos días nublados. Estas cifras son exploratorias y no permiten afirmar significancia.
 
-**Análisis adicional C — TimesFM 3.0** (rama `t05-timesfm`, `results/t05_timesfm/resumen.json`, regenerable):
-- **Protocolo.** Mismo comando y mismo periodo, con 112 orígenes por rama, el estado inicial configurado, λ_T=0 heredado de T04 y los bloques, rangos y semillas comunes. Cada alternativa se compara con A.
-- **Regresión.** La ejecución con C reproduce **exactamente** A, B y la referencia de `results/t05_evaluacion_verificada`. Son idénticos los CSV de cargas, horas, baterías, decisiones y pronósticos por política; J, S_pond, métricas, reservas, ΔJ y pareo; y las filas de la tabla sin tiempos.
+**Análisis adicional C — TimesFM 3.0** (rama `experiment/timesfm`, `results/comparacion_timesfm/resumen.json`, regenerable):
+- **Protocolo.** Mismo comando y mismo periodo, con 112 orígenes por rama, el estado inicial configurado, λ_T=0 heredado de la calibración del peso terminal y los bloques, rangos y semillas comunes. Cada alternativa se compara con A.
+- **Regresión.** La ejecución con C reproduce **exactamente** A, B y la referencia de `results/evaluacion_verificada`. Son idénticos los CSV de cargas, horas, baterías, decisiones y pronósticos por política; J, S_pond, métricas, reservas, ΔJ y pareo; y las filas de la tabla sin tiempos.
 - **Pronóstico** (1438 pares diurnos, cuantiles corregidos; A / B / C):
 
   | Indicador | A | B | C |
@@ -262,7 +262,7 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
 - **Lectura.** Con C se repite la lectura de B: un error predictivo menor que el de beta no garantiza más servicio. El signo de la diferencia depende de pocos días nublados.
 - **Verificación.**
   - **Consistencia.** Cero violaciones físicas: error del bus ≤ 5.7e−14 Wh y de batería ≤ 2.3e−13 Wh, cotas redondeadas hacia arriba. Cero filtraciones.
-  - **Reproducibilidad.** La repetición interna de las primeras 48 h fue exacta: 30 h, 5 orígenes, 0 Wh y 0 W/m² de diferencia. Una segunda ejecución completa (`results/t05_timesfm_repeticion`) produjo CSV de resultados idénticos byte a byte; en `tabla_ab.csv` solo cambian los tiempos medidos.
+  - **Reproducibilidad.** La repetición interna de las primeras 48 h fue exacta: 30 h, 5 orígenes, 0 Wh y 0 W/m² de diferencia. Una segunda ejecución completa (`results/comparacion_timesfm_repeticion`) produjo CSV de resultados idénticos byte a byte; en `tabla_ab.csv` solo cambian los tiempos medidos.
 - **Costo computacional en CPU/FP32.**
   - La ejecución completa pasó de 266.2 a 426.3 s.
   - La rama C tardó 137.1 s, frente a unos 120 s de A y B; la inferencia media fue de 0.179 s por origen (máximo 0.231 s, total 20.1 s), unas 7 veces la de Chronos-2.
@@ -275,9 +275,9 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
   - Los resultados son exploratorios y no se aplican pruebas de significancia.
   - El encaje de la licencia no comercial en un repositorio público es una interpretación del proyecto, no asesoría legal: no se redistribuyen pesos y los pronósticos son *Outputs*.
 
-**Análisis adicional D — t0-gamma** (rama `t05-t0gamma`, `results/t05_t0gamma/resumen.json`, regenerable):
-- **Protocolo.** El mismo de C: mismo comando y periodo, 112 orígenes por rama, estado inicial configurado, λ_T=0 heredado de T04 y bloques, rangos y semillas comunes. Cada alternativa se compara con A.
-- **Regresión.** La ejecución con D reproduce **exactamente** A, B, C y la referencia de `results/t05_timesfm`. Son idénticos, como texto, los CSV de cargas, horas, baterías, decisiones y pronósticos por política; J, S_pond, métricas, reservas, ΔJ, semillas, bloques, hashes de contexto, correcciones y pareo; y las filas de la tabla sin tiempos.
+**Análisis adicional D — t0-gamma** (rama `experiment/t0gamma`, `results/comparacion_t0gamma/resumen.json`, regenerable):
+- **Protocolo.** El mismo de C: mismo comando y periodo, 112 orígenes por rama, estado inicial configurado, λ_T=0 heredado de la calibración del peso terminal y bloques, rangos y semillas comunes. Cada alternativa se compara con A.
+- **Regresión.** La ejecución con D reproduce **exactamente** A, B, C y la referencia de `results/comparacion_timesfm`. Son idénticos, como texto, los CSV de cargas, horas, baterías, decisiones y pronósticos por política; J, S_pond, métricas, reservas, ΔJ, semillas, bloques, hashes de contexto, correcciones y pareo; y las filas de la tabla sin tiempos.
 - **Pronóstico** (1438 pares diurnos, cuantiles corregidos; A / B / C / D):
 
   | Indicador | A | B | C | D |
@@ -301,10 +301,10 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
 
   Los otros 23 días son idénticos; la media diaria es −8.45 Wh·p y la mediana, 0. El 4 de marzo D y C obtienen el mismo J, y el 17 de marzo B, C y D ganan lo mismo frente a A.
 - **Cargas y decisiones.** El servicio crítico es del 100 % y el nivel de servicio horario, del 93.15 %, como en C. D eligió ρ=0 en los 112 orígenes. Es la rama con menos compromisos incumplidos (19, frente a 29 de A, 35 de B y 20 de C), pero también la que deja más solicitudes sin comprometer (198, frente a 191, 194 y 195). Atendió el 71.8 % de las cargas de prioridad 1 y el 91.3 % de las de prioridad 2, entre los valores de A y C.
-- **Lectura.** D es el mejor pronosticador de las cuatro ramas por MAE y pinball, pero no obtiene el mayor J: lo obtiene B. Se refuerza la lectura de T05: un error predictivo menor no garantiza más servicio, y el signo de la diferencia depende de pocos días nublados.
+- **Lectura.** D es el mejor pronosticador de las cuatro ramas por MAE y pinball, pero no obtiene el mayor J: lo obtiene B. Se refuerza la lectura de la evaluación principal: un error predictivo menor no garantiza más servicio, y el signo de la diferencia depende de pocos días nublados.
 - **Verificación.**
   - **Consistencia.** Cero violaciones físicas: error del bus ≤ 5.7e−14 Wh y de batería ≤ 2.3e−13 Wh, cotas redondeadas hacia arriba. Cero filtraciones y ningún aviso de valores no finitos en stderr.
-  - **Reproducibilidad.** La repetición interna de las primeras 48 h fue exacta: 30 h, 5 orígenes, 0 Wh y 0 W/m² de diferencia. Una segunda ejecución completa (`results/t05_t0gamma_repeticion`) produjo CSV de resultados idénticos byte a byte; en `tabla_ab.csv` solo cambian los tiempos medidos.
+  - **Reproducibilidad.** La repetición interna de las primeras 48 h fue exacta: 30 h, 5 orígenes, 0 Wh y 0 W/m² de diferencia. Una segunda ejecución completa (`results/comparacion_t0gamma_repeticion`) produjo CSV de resultados idénticos byte a byte; en `tabla_ab.csv` solo cambian los tiempos medidos.
 - **Costo computacional en CPU/FP32.**
   - La ejecución completa duró 645.6 s y su repetición, 583.8 s, frente a 426.3 s de la ejecución con C. Las ramas A, B y C también tardaron distinto que en esa ejecución (A: 141.1 y 120.4 s, frente a 122.3 s), porque el tiempo depende de la carga de la máquina. Por eso el costo de D se compara dentro de cada ejecución.
   - La rama D tardó 138.5 y 127.5 s, frente a 141.1 y 120.4 s de A, 135.7 y 123.7 s de B y 146.7 y 147.9 s de C: el MPC domina el tiempo de cada rama.
@@ -318,7 +318,7 @@ El término terminal \(\lambda_T\) se fija **con desarrollo** para valorar energ
   - La sustitución interna de no finitos por 0 solo se detecta en el registro de avisos, no en los cuantiles.
   - Los resultados son exploratorios y no se aplican pruebas de significancia.
 
-**Correspondencia con los indicadores del artículo (§4.2).** El artículo mide el *service level* (porcentaje de réplicas en que se cubre la demanda) y el *missing of fulfilment* (porcentaje medio no cubierto). T05 calcula sus análogos sobre la trayectoria realizada: la proporción de horas con demanda atendida por completo y la fracción media no atendida en las horas con déficit. La diferencia está en la base: horas de una sola realización, no réplicas. Los bloques y rangos comunes de A y B cumplen el papel de los números aleatorios comunes que usa el artículo (§3.1) para comparar soluciones. No se compara numéricamente con el caso Volcanes, porque los datos, el sistema y la demanda difieren.
+**Correspondencia con los indicadores del artículo (§4.2).** El artículo mide el *service level* (porcentaje de réplicas en que se cubre la demanda) y el *missing of fulfilment* (porcentaje medio no cubierto). La evaluación calcula sus análogos sobre la trayectoria realizada: la proporción de horas con demanda atendida por completo y la fracción media no atendida en las horas con déficit. La diferencia está en la base: horas de una sola realización, no réplicas. Los bloques y rangos comunes de A y B cumplen el papel de los números aleatorios comunes que usa el artículo (§3.1) para comparar soluciones. No se compara numéricamente con el caso Volcanes, porque los datos, el sistema y la demanda difieren.
 
 **Indicadores principales** (calculados sobre ejecución realizada):
 
@@ -334,9 +334,9 @@ El resultado principal es la **diferencia pareada B−A** en servicio bajo la mi
 
 **Criterio de éxito del trabajo:** ejecutar ambos métodos de extremo a extremo, respetar la física, mostrar resultados reproducibles y explicar si Chronos-2 aporta o no una mejora bajo estos supuestos. **No** es necesario que Chronos-2 gane.
 
-## 8. Implementación compacta: T01–T05 implementadas
+## 8. Implementación y estado
 
-Conservar `data/`, la ingesta/generación existente de `src/` y sus pruebas actuales. T04 añade únicamente el peso terminal compartido a la configuración; los parámetros físicos conservan sus supuestos. No crear API, base de datos, interfaz web, framework de servicios ni abstracciones innecesarias.
+Conservar `data/`, la ingesta/generación existente de `src/` y sus pruebas actuales. El MPC añade únicamente el peso terminal compartido a la configuración; los parámetros físicos conservan sus supuestos. No crear API, base de datos, interfaz web, framework de servicios ni abstracciones innecesarias.
 
 **Módulos funcionales, sin capas adicionales:**
 
@@ -345,22 +345,20 @@ src/
 ├── pronosticos.py   # Chronos-2, TimesFM 3.0 (C), t0-gamma (D), beta y correcciones comunes
 ├── simulador.py     # FV, baterías, despacho y cargas
 ├── controlador.py   # escenarios y MPC compartido
-└── experimento.py   # T05: evaluación pareada, métricas, tabla y gráficos
+└── experimento.py   # evaluación pareada, métricas, tabla y gráficos
 ```
 
 La implementación puede reunir funciones cortas en menos archivos si resulta más clara; **la estructura es orientativa**, no un requisito arquitectónico. Una configuración y un comando de experimento son suficientes. Preferir `numpy`, `pandas`, `scipy`, `matplotlib` y dependencias oficiales de Chronos-2 sobre desarrollar librerías propias. Añadir pruebas breves y enfocadas en invariantes matemáticos, tiempo de pronóstico y comparación justa; evitar pruebas extensas de infraestructura que no intervienen en la investigación.
 
-| Tarea / issue de GitHub | Resultado mínimo verificable | Estado |
+| Componente | Resultado mínimo verificable | Estado |
 |---|---|---|
-| **T01 — Datos** ([#1](https://github.com/ThomasSerna/proyecto-optimizacion/issues/1)) | CSV, demanda semisintética, configuración y validación reproducibles | **Completada** |
-| **T02 — Chronos-2** ([#2](https://github.com/ThomasSerna/proyecto-optimizacion/issues/2)) | Pronosticar 24 h a partir de historia válida y graficar frente a irradiancia real | **Completada** |
-| **T03 — Simulación energética** ([#3](https://github.com/ThomasSerna/proyecto-optimizacion/issues/3)) | Física corregida por batería, heurística y restricciones verificables | **Completada** |
-| **T04 — Beta y MPC** ([#4](https://github.com/ThomasSerna/proyecto-optimizacion/issues/4)) | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completada y verificada en CPU** |
-| **T05 — Experimentación** ([#5](https://github.com/ThomasSerna/proyecto-optimizacion/issues/5)) | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completada y verificada en CPU** |
-| **T05-C — TimesFM 3.0** (análisis adicional, rama `t05-timesfm`) | Mismo protocolo con un tercer pronosticador; regresión exacta de A/B | **Completado y verificado en CPU** |
-| **T05-D — t0-gamma** (análisis adicional, rama `t05-t0gamma`) | Mismo protocolo con un cuarto pronosticador; regresión exacta de A/B/C | **Completado y verificado en CPU** |
-
-Las antiguas issues **#6 y #7** quedan absorbidas por T04 y T05; no se mantienen como trabajos adicionales. T03 incorpora la física; T04 integra pronósticos y simulador, y T05 presentará el experimento final.
+| **Datos** | CSV, demanda semisintética, configuración y validación reproducibles | **Completado** |
+| **Pronóstico con Chronos-2** | Pronosticar 24 h a partir de historia válida y graficar frente a irradiancia real | **Completado** |
+| **Simulación energética** | Física corregida por batería, heurística y restricciones verificables | **Completado** |
+| **Beta y MPC** | Referencia beta + controlador común que utiliza pronósticos de ambas ramas | **Completado y verificado en CPU** |
+| **Evaluación pareada** | Comparar A/B, exportar tabla y gráficas, explicar resultados y límites | **Completado y verificado en CPU** |
+| **TimesFM 3.0 (C)** (análisis adicional, rama `experiment/timesfm`) | Mismo protocolo con un tercer pronosticador; regresión exacta de A/B | **Completado y verificado en CPU** |
+| **t0-gamma (D)** (análisis adicional, rama `experiment/t0gamma`) | Mismo protocolo con un cuarto pronosticador; regresión exacta de A/B/C | **Completado y verificado en CPU** |
 
 ## 9. Entregables y límites
 

@@ -152,7 +152,7 @@ intervalo correspondiente.
 La evaluación utiliza consumo sintético y no constituye una validación
 independiente con mediciones reales de la escuela.
 
-## Ingesta ejecutable y configuración provisional (HU-01)
+## Ingesta ejecutable y configuración provisional
 
 `uv run energy-project --config scripts/configuracion.json` valida los archivos
 contra su configuración y semilla, sin escribirlos. Comprueba números finitos,
@@ -185,15 +185,15 @@ No se agregan estados ni límites de las baterías en la ingesta.
 
 Intervalo: 1 h; horizonte: 24 intervalos; replanificación: 6; escenarios: 50.
 Semilla de demanda: 20261018; semilla de escenarios: 20261019.
-T04 implementa el muestreo con los mismos bloques y rangos para beta y Chronos-2
+El controlador muestrea los mismos bloques y rangos para beta y Chronos-2
 (IDEA.md §5). El estado inicial se refiere al inicio de la simulación;
 los cortes desarrollo/evaluación no prescriben reinicios de batería.
 
 La correspondencia con ecuaciones (1)–(9), objetivo (10) y algoritmos del paper
-se documenta en IDEA.md §4.5, con las correcciones y adaptaciones implementadas
-en T03–T04. El comando de preparación de T01 verifica datos y dominios de
-parámetros; los balances FV/baterías y el servicio realizado se comprueban en
-el simulador y la calibración. La evaluación final corresponde a T05.
+se documenta en IDEA.md §4.5, junto con las correcciones y adaptaciones
+implementadas. El comando de preparación verifica datos y dominios de parámetros;
+los balances FV/baterías y el servicio realizado se comprueban en el simulador y
+la calibración. La evaluación se describe en IDEA.md §7.
 
 ## Nuevas adquisiciones solares
 

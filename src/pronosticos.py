@@ -436,7 +436,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Ensayo reproducible de Chronos-2 con dos orígenes de desarrollo")
     parser.add_argument("--config", type=Path, default=Path("scripts/configuracion.json"))
-    parser.add_argument("--salida", type=Path, default=Path("results/chronos_t02"))
+    parser.add_argument("--salida", type=Path, default=Path("results/ensayo_chronos"))
     args = parser.parse_args()
     try:
         ensayo_chronos(cargar_caso(args.config), args.salida)
