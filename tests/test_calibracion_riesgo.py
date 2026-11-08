@@ -1,4 +1,4 @@
-"""Protocolo T07: selección temporal, cola realizada y continuidad física."""
+"""Calibración del riesgo: selección temporal, cola realizada y continuidad física."""
 
 from copy import deepcopy
 import importlib.metadata

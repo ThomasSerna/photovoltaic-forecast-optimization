@@ -1,4 +1,4 @@
-"""Experimento 2×2 de T08 con dobles: contrastes a mano, pareo entre modos y comando."""
+"""Experimento 2×2 con dobles: contrastes a mano, pareo entre modos y comando."""
 
 from collections import Counter
 from copy import deepcopy
@@ -194,7 +194,7 @@ def test_cifras_publicadas_incluyen_d_y_rechazan_cambios():
         modulo.cotejar_publicadas(metricas, resumenes)
 
 
-def test_cifras_de_d_solo_se_cotejan_con_el_peso_de_t07():
+def test_cifras_de_d_solo_se_cotejan_con_el_peso_calibrado():
     metricas, resumenes = _publicadas()
     metricas["D"]["J"] += 1.
     filas = modulo.cotejar_publicadas(metricas, resumenes, lambda_riesgo=1.)
@@ -204,7 +204,7 @@ def test_cifras_de_d_solo_se_cotejan_con_el_peso_de_t07():
 
 @pytest.fixture
 def comando(tmp_path, monkeypatch):
-    """Comando T08 sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
+    """Comando del experimento 2×2 sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
     caso.configuracion["semilla"] = 20261018
     caso.configuracion["pronosticos"].update(revision="a" * 40, dispositivo="cpu")
@@ -216,7 +216,7 @@ def comando(tmp_path, monkeypatch):
     monkeypatch.setattr(modulo, "cargar_chronos", lambda revision, dispositivo: object())
     monkeypatch.setattr(modulo, "proveedores", lambda caso, pipeline: dobles)
     monkeypatch.setattr(modulo, "cotejar_publicadas", lambda metricas, resumenes, **opciones: {})
-    salida = tmp_path / "t08"
+    salida = tmp_path / "experimento_2x2"
     monkeypatch.setattr(sys, "argv", ["experimento_2x2", "--config", str(config), "--salida", str(salida)])
     return config, salida, config.read_bytes()
 
@@ -259,7 +259,7 @@ def test_comando_registra_el_peso_de_la_sensibilidad(comando, monkeypatch):
     informe = json.loads((salida / "resumen.json").read_text(encoding="utf-8"))
     assert informe["control"]["cvar"] == dict(modo_mpc="cvar", alpha_cvar=.9, lambda_riesgo=1.)
     assert informe["configuracion_cvar"]["lambda_riesgo"] == 1.
-    assert any("lambda_R=1 no es el peso fijado por T07" in supuesto for supuesto in informe["supuestos"])
+    assert any("lambda_R=1 no es el peso calibrado" in supuesto for supuesto in informe["supuestos"])
     assert not any("con lambda_R=0" in supuesto for supuesto in informe["supuestos"])
 
 
@@ -270,7 +270,7 @@ def test_comando_fallido_no_publica_resumen(comando, monkeypatch, fallo):
         salida.mkdir()
     else:
         def distinto(metricas, resumenes, **opciones):
-            raise ValueError("T08: diferencias con cifras publicadas")
+            raise ValueError("experimento 2×2: diferencias con cifras publicadas")
         monkeypatch.setattr(modulo, "cotejar_publicadas", distinto)
     with pytest.raises(SystemExit) as error:
         modulo.main()

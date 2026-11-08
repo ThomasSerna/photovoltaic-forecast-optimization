@@ -236,8 +236,8 @@ def graficar(carpeta, caso, comparacion):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--referencia", type=Path, default=RAIZ / "results/t07_regresion_original")
-    parser.add_argument("--config", type=Path, default=RAIZ / "results/t07_calibracion/configuracion_cvar.json")
+    parser.add_argument("--referencia", type=Path, default=RAIZ / "results/regresion_original")
+    parser.add_argument("--config", type=Path, default=RAIZ / "results/calibracion_riesgo/configuracion_cvar.json")
     parser.add_argument("--salida", type=Path, default=RAIZ / "results/comparacion_mpc_chronos")
     args = parser.parse_args()
     try:
@@ -266,7 +266,7 @@ def main():
         pd.DataFrame(filas).to_csv(salida / "metricas.csv", index=False)
         graficar(salida / "figuras", caso, comparacion)
         salida_informe = dict(
-            alcance="Comparación de Chronos-2 en marzo: MPC anterior y nuevo, con parámetros ya fijados en T07",
+            alcance="Comparación de Chronos-2 en marzo: MPC anterior y nuevo, con parámetros ya fijados en la calibración del riesgo",
             metodo="Pronósticos crudos congelados; no se carga Chronos, no se ajustan parámetros ni se ejecuta beta",
             inicio_utc=informe["inicio_utc"], fin_utc=informe["fin_utc"],
             configuracion_anterior=informe["configuracion"], configuracion_nueva=caso.configuracion,
@@ -280,7 +280,7 @@ def main():
             duracion_s=perf_counter() - inicio, entorno=entorno(),
             advertencias=["Resultados exploratorios de 28 días, sin intervalos de confianza ni significancia inferida",
                           "lambda_R=0 amplía candidatos; no equivale al MPC original",
-                          "El tiempo excluye inferencia real y no mide una mejora de velocidad frente a T05"],
+                          "El tiempo excluye inferencia real y no mide una mejora de velocidad frente a la evaluación original"],
             archivos_sha256={str(p.relative_to(salida)): sha256_de(p)
                             for p in sorted(salida.rglob("*")) if p.is_file()},
         )

@@ -1,4 +1,4 @@
-"""Evaluación pareada de T05 con dobles: métricas a mano, pareo, filtraciones y repetición."""
+"""Evaluación pareada con dobles: métricas a mano, pareo, filtraciones y repetición."""
 
 import json
 import math
@@ -206,7 +206,7 @@ def test_reproducibilidad_detecta_cambios_en_el_plan_completo(tabla):
 @pytest.fixture(params=[{}, dict(modo_mpc="cvar", alpha_cvar=0.90, lambda_riesgo=1., lambda_terminal=17.)],
                 ids=["original", "cvar"])
 def comando(tmp_path, monkeypatch, request):
-    """Comando T05 sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
+    """Comando de la evaluación sobre el caso de anticipación, con dobles en lugar de Chronos-2."""
     caso = _evaluable(real=(0., 1000.), prioridades=(1, 3))
     caso.configuracion.update(request.param)
     caso.configuracion["semilla"] = 20261018
@@ -218,7 +218,7 @@ def comando(tmp_path, monkeypatch, request):
     monkeypatch.setattr("src.datos.cargar_caso", lambda ruta: caso)
     monkeypatch.setattr("src.pronosticos.cargar_chronos", lambda revision, dispositivo: object())
     monkeypatch.setattr("src.controlador.proveedores", lambda caso, pipeline: dobles)
-    salida = tmp_path / "t05"
+    salida = tmp_path / "evaluacion"
     monkeypatch.setattr(sys, "argv", ["experimento", "--config", str(config), "--salida", str(salida)])
     return config, salida, config.read_bytes()
 

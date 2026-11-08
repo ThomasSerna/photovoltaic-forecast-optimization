@@ -11,7 +11,7 @@ pytest.importorskip("matplotlib")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # `scripts` no es un paquete instalado
 
-from scripts.comparar_pesos_desarrollo import cotejar_t07, seleccionar_servicio
+from scripts.comparar_pesos_desarrollo import cotejar_calibracion, seleccionar_servicio
 from src.controlador import _validar_riesgo
 
 
@@ -33,13 +33,13 @@ def test_seleccion_elige_el_menor_peso_si_empatan():
     assert seleccionar_servicio(ajuste) == 0.
 
 
-def test_cotejo_detecta_diferencias_con_las_cifras_de_t07():
+def test_cotejo_detecta_diferencias_con_las_cifras_de_la_calibracion():
     ajuste = _tabla([("beta", 0., 447641.358, 3083.645), ("chronos", 0., 447641.358, 3083.645),
                      ("beta", 1., 447688.355, 3103.842), ("chronos", 1., 447688.355, 3103.842)])
     validacion = _tabla([("beta", 0., 150935.735, 2809.385), ("chronos", 0., 150794.594, 2910.200)])
-    assert all(fila["coincide"] for fila in cotejar_t07(ajuste, validacion).values())
+    assert all(fila["coincide"] for fila in cotejar_calibracion(ajuste, validacion).values())
     validacion.loc[0, "J"] += .01
-    assert not cotejar_t07(ajuste, validacion)["J_validacion_beta"]["coincide"]
+    assert not cotejar_calibracion(ajuste, validacion)["J_validacion_beta"]["coincide"]
 
 
 @pytest.mark.parametrize("j_beta, cvar_beta, servicio, cola", [

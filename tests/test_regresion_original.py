@@ -1,4 +1,4 @@
-"""Regresión T07: detecta cambios físicos y contrasta cifras históricas de T05."""
+"""Regresión del modo original: detecta cambios físicos y contrasta las cifras publicadas."""
 
 from copy import deepcopy
 from importlib.util import module_from_spec, spec_from_file_location
@@ -13,13 +13,13 @@ pytest.importorskip("matplotlib")
 from src.controlador import ejecutar_mpc
 from test_controlador import ORIGEN, _caso, _cuantiles
 
-SPEC = spec_from_file_location("regresion_t07", Path(__file__).resolve().parents[1] /
-                               "scripts/verificar_regresion_t07.py")
+SPEC = spec_from_file_location("regresion_original", Path(__file__).resolve().parents[1] /
+                               "scripts/verificar_regresion_original.py")
 regresion = module_from_spec(SPEC)
 SPEC.loader.exec_module(regresion)
 
 
-def test_original_coincide_con_revision_pre_t06_y_detecta_cambios():
+def test_original_coincide_con_revision_previa_al_cvar_y_detecta_cambios():
     caso = _caso(real=(0., 0.), prioridades=(1, 3))
     pronosticar = lambda historia, origen, horizonte: _cuantiles([0.] * horizonte, origen)
     fin = ORIGEN + pd.Timedelta(hours=2)

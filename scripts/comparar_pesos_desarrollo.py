@@ -1,9 +1,9 @@
 """Calibración orientada al servicio: compara λ_R en desarrollo, sin usar marzo.
 
 Adaptación del proyecto, con el criterio de la rama `experimental/beta-comparation`: elige
-el peso de mayor J medio entre beta y Chronos-2 en el ajuste de T07; en empate, el menor.
+el peso de mayor J medio entre beta y Chronos-2 en el ajuste de la calibración del riesgo; en empate, el menor.
 Aquí se añade la validación del 17 de febrero al 3 de marzo con ambos proveedores, con la
-regla de T07: frente a λ_R = 0, cada uno conserva el 99 % de J y el CVaR diario medio no
+regla de esa calibración: frente a λ_R = 0, cada uno conserva el 99 % de J y el CVaR diario medio no
 empeora. Solo se recorren λ_R ∈ {0, 1}: los otros pesos tienen menor J medio en IDEA §7.
 """
 
@@ -61,7 +61,7 @@ def seleccionar_servicio(ajuste):
     return float(ajuste.groupby("lambda_riesgo", sort=True)["J"].mean().idxmax())
 
 
-def cotejar_t07(ajuste, validacion):
+def cotejar_calibracion(ajuste, validacion):
     """Compara con IDEA §7, a su precisión: ajuste medio de λ_R ∈ {0, 1} y validación con cero."""
     medias = ajuste.groupby("lambda_riesgo")[["J", "CVaR_diario"]].mean()
     cero = validacion.loc[validacion["lambda_riesgo"].eq(0.)].set_index("proveedor")
@@ -99,9 +99,9 @@ def main():
         informe = dict(
             alcance="Calibración orientada al servicio en desarrollo; marzo no interviene",
             criterio="mayor J medio entre beta y Chronos-2 en el ajuste; empate por menor peso",
-            criterio_validacion="regla de T07: 99 % de J en cada rama y CVaR diario medio no mayor que con peso cero",
+            criterio_validacion="regla de la calibración del riesgo: 99 % de J en cada rama y CVaR diario medio no mayor que con peso cero",
             inicio=RIESGO_INICIO, corte=RIESGO_CORTE, fin=RIESGO_FIN, pesos=list(PESOS), lambda_riesgo=ensayo["lambda_riesgo"],
-            veredicto=ensayo["veredicto"], cifras_t07=cotejar_t07(ensayo["ajuste"], ensayo["validacion"]),
+            veredicto=ensayo["veredicto"], cifras_calibracion=cotejar_calibracion(ensayo["ajuste"], ensayo["validacion"]),
             ajuste=ensayo["ajuste"].to_dict("records"),
             validacion=ensayo["validacion"].to_dict("records"), fisica=ensayo["fisica"],
             incumplidos=ensayo["incumplidos"], duracion_s=duracion,

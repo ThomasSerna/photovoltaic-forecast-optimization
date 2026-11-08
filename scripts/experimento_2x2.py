@@ -1,10 +1,10 @@
-"""T08: experimento 2×2 de pronóstico (beta, Chronos-2) por controlador (original, CVaR).
+"""Experimento 2×2 de pronóstico (beta, Chronos-2) por controlador (original, CVaR).
 
-Cruza los proveedores de T05 con los dos modos del MPC, con los parámetros que fijó T07
-(α = 0.9, λ_R = 0). Con ese peso C y D no penalizan el riesgo: eligen el mayor J esperado
+Cruza los proveedores de la evaluación original con los dos modos del MPC, con los
+parámetros que fijó la calibración del riesgo (α = 0.9, λ_R = 0). Con ese peso C y D no penalizan el riesgo: eligen el mayor J esperado
 entre más calendarios. Marzo ya orientó esta extensión, así que los resultados son
 exploratorios y no constituyen una validación confirmatoria. `--lambda-riesgo` repite el
-cruce con otro peso como sensibilidad: no sustituye el de T07.
+cruce con otro peso como sensibilidad: no sustituye el calibrado.
 """
 
 import argparse
@@ -31,7 +31,7 @@ from src.pronosticos import cargar_chronos
 
 RAIZ = Path(__file__).resolve().parents[1]
 CELDAS = {"A": ("original", "beta"), "B": ("original", "chronos"), "C": ("cvar", "beta"), "D": ("cvar", "chronos")}
-LAMBDA_T07 = 0.  # IDEA §7, calibración T07
+LAMBDA_CALIBRADO = 0.  # IDEA §7, calibración del riesgo
 INTERACCION = "(D-C)-(B-A)"
 CONTRASTES = {"C-A": dict(C=1, A=-1), "D-B": dict(D=1, B=-1), "B-A": dict(B=1, A=-1), "D-C": dict(D=1, C=-1),
               INTERACCION: dict(D=1, C=-1, B=-1, A=1)}
@@ -54,14 +54,14 @@ ADVERTENCIAS = [
 ]
 
 
-def parametros_cvar(lambda_riesgo=LAMBDA_T07):
+def parametros_cvar(lambda_riesgo=LAMBDA_CALIBRADO):
     return dict(modo_mpc="cvar", alpha_cvar=ALPHA_RIESGO, lambda_riesgo=lambda_riesgo)
 
 
 def advertencia_peso(lambda_riesgo):
-    if lambda_riesgo == LAMBDA_T07:
+    if lambda_riesgo == LAMBDA_CALIBRADO:
         return "con lambda_R=0, C y D no penalizan el riesgo: la diferencia con A y B mide un conjunto de candidatos más amplio"
-    return (f"lambda_R={lambda_riesgo:g} no es el peso fijado por T07: sensibilidad exploratoria; "
+    return (f"lambda_R={lambda_riesgo:g} no es el peso calibrado: sensibilidad exploratoria; "
             "la diferencia con A y B combina más candidatos y la penalización")
 
 
@@ -79,11 +79,11 @@ def memorizar(pronosticar):
     return envuelto
 
 
-def ejecutar_2x2(caso, pronosticadores, *, inicio=None, fin=None, lambda_riesgo=LAMBDA_T07):
+def ejecutar_2x2(caso, pronosticadores, *, inicio=None, fin=None, lambda_riesgo=LAMBDA_CALIBRADO):
     """Recorre los dos controladores; cada celda conserva sus propios estados de batería."""
     config = caso.configuracion
     if parametros_mpc(config)[0] != "original" or config["lambda_terminal"] != 0:
-        raise ValueError("T08: la configuración base debe ser el MPC original con lambda_terminal=0")
+        raise ValueError("experimento 2×2: la configuración base debe ser el MPC original con lambda_terminal=0")
     caso_cvar = copy(caso)
     caso_cvar.configuracion = dict(config, **parametros_cvar(lambda_riesgo))
     casos = dict(original=caso, cvar=caso_cvar)
@@ -203,10 +203,11 @@ def resumir_contrastes(tabla, diario, ejecucion):
     return pd.DataFrame(filas)
 
 
-def cotejar_publicadas(metricas, resumenes, lambda_riesgo=LAMBDA_T07):
-    """A, B y la referencia reproducen T05; B y D, la comparación posterior a T07 (IDEA §7).
+def cotejar_publicadas(metricas, resumenes, lambda_riesgo=LAMBDA_CALIBRADO):
+    """A, B y la referencia reproducen la evaluación original; B y D, la comparación
+    posterior a la calibración del riesgo (IDEA §7).
 
-    D solo tiene cifras publicadas con el peso de T07.
+    D solo tiene cifras publicadas con el peso calibrado.
     """
     original = resumenes["original"]["metricas"]
     valores = dict(
@@ -217,14 +218,14 @@ def cotejar_publicadas(metricas, resumenes, lambda_riesgo=LAMBDA_T07):
         MAE_diurno_chronos=(original["chronos"]["pronostico"]["diurno"]["corregido"]["mae_w_m2"], 64.20, .005),
         CVaR_diario_B=(metricas["B"]["CVaR_diario"], 3949.084, .0005),
     )
-    if lambda_riesgo == LAMBDA_T07:
+    if lambda_riesgo == LAMBDA_CALIBRADO:
         valores.update(J_D=(metricas["D"]["J"], 286406.573, .0005),
                        CVaR_diario_D=(metricas["D"]["CVaR_diario"], 3887.228, .0005))
     filas = {nombre: dict(observado=valor, publicado=esperado, tolerancia=tolerancia,
                           coincide=abs(valor - esperado) <= tolerancia)
              for nombre, (valor, esperado, tolerancia) in valores.items()}
     if not all(fila["coincide"] for fila in filas.values()):
-        raise ValueError(f"T08: diferencias con cifras publicadas: {filas}")
+        raise ValueError(f"experimento 2×2: diferencias con cifras publicadas: {filas}")
     return filas
 
 
@@ -314,7 +315,7 @@ def graficar(carpeta, tabla, contrastes, diario):
 
 
 def exportar_2x2(salida, ejecucion, resumenes, tablas_ab, tabla, diario, contrastes):
-    """Las salidas de T05 por modo y, en la raíz, las tablas y figuras del cruce."""
+    """Las salidas de la evaluación pareada por modo y, en la raíz, las tablas y figuras del cruce."""
     for modo, caso in ejecucion["casos"].items():
         carpeta = salida / modo
         carpeta.mkdir()
@@ -333,8 +334,8 @@ def _registros_tabla(tabla):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=RAIZ / "scripts/configuracion.json")
-    parser.add_argument("--salida", type=Path, default=RAIZ / "results/t08_2x2")
-    parser.add_argument("--lambda-riesgo", type=float, default=LAMBDA_T07)
+    parser.add_argument("--salida", type=Path, default=RAIZ / "results/experimento_2x2")
+    parser.add_argument("--lambda-riesgo", type=float, default=LAMBDA_CALIBRADO)
     args = parser.parse_args()
     cvar = parametros_cvar(args.lambda_riesgo)
     try:
@@ -368,7 +369,7 @@ def main():
         for paquete in ("numpy", "scipy", "chronos-forecasting", "torch", "transformers", "astral", "matplotlib"):
             versiones[paquete] = importlib.metadata.version(paquete)
         informe = dict(
-            alcance="T08: experimento 2×2 en marzo; exploratorio porque ese periodo ya orientó la extensión",
+            alcance="experimento 2×2 en marzo; exploratorio porque ese periodo ya orientó la extensión",
             celdas={celda: dict(modo_mpc=modo, proveedor=proveedor) for celda, (modo, proveedor) in CELDAS.items()},
             inicio_utc=evaluaciones["original"]["inicio_utc"].isoformat(),
             fin_utc=evaluaciones["original"]["fin_utc"].isoformat(), periodo_local=config["periodos"]["evaluacion"],
@@ -392,7 +393,7 @@ def main():
         texto = json.dumps(informe, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
         if (entradas_sha256(caso.rutas) != entradas or codigo_sha256() != codigo
                 or sha256_de(Path(__file__)) != guion):
-            raise ValueError("T08: cambiaron entradas o código durante el experimento")
+            raise ValueError("experimento 2×2: cambiaron entradas o código durante el experimento")
         temporal = salida / "resumen.json.tmp"
         try:
             temporal.write_text(texto, encoding="utf-8")

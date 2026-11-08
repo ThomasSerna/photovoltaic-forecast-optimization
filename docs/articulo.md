@@ -5,7 +5,7 @@ Caso semisintético contextualizado en el Centro Educativo Rural El Rayo, Támes
 (Antioquia). Integrantes: Thomas Serna, Juan Esteban Palacio y Jeronimo Gutierrez.
 
 > Estado: borrador. Las secciones 3 a 6 se generaron a partir de
-> `results/t05_evaluacion_verificada/`, `results/t08_2x2/`, `results/t08_2x2_lambda1/` y
+> `results/evaluacion_verificada/`, `results/experimento_2x2/`, `results/experimento_2x2_lambda1/` y
 > `results/pesos_desarrollo/` (regenerables con los comandos de la sección 3.6); sus
 > figuras se copiaron a `docs/figuras/`. El resumen, la introducción y la revisión de literatura se redactaron a partir de `docs/IDEA.md`,
 > de Acuña et al. (2021) y de la ficha de Chronos-2; el equipo debe revisarlos antes de
@@ -362,7 +362,7 @@ y riesgo cuando J y el CVaR diario suben o bajan a la vez.
 El comando
 
 ```
-uv run --locked --extra pronosticos python -m src.experimento --salida results/t05_evaluacion
+uv run --locked --extra pronosticos python -m src.experimento --salida results/evaluacion
 ```
 
 ejecuta A, B y la referencia con el entorno fijado en `uv.lock`. Verifica:
@@ -378,7 +378,7 @@ Si alguna comprobación falla, no publica `resumen.json`. El experimento 2×2 se
 con
 
 ```
-uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --salida results/t08_2x2
+uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --salida results/experimento_2x2
 ```
 
 Hace una sola inferencia por origen y proveedor, de modo que A/C y B/D reciben cuantiles
@@ -390,7 +390,7 @@ La sensibilidad al peso de riesgo se repite con
 
 ```
 uv run --locked --extra pronosticos python -m scripts.comparar_pesos_desarrollo --salida results/pesos_desarrollo
-uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --lambda-riesgo 1 --salida results/t08_2x2_lambda1
+uv run --locked --extra pronosticos python -m scripts.experimento_2x2 --lambda-riesgo 1 --salida results/experimento_2x2_lambda1
 ```
 
 El primer comando recorre del 6 de enero al 2 de marzo con λ_R ∈ {0, 1}, con estados
@@ -401,9 +401,9 @@ porque estas corresponden a λ_R = 0.
 ## 4. Resultados
 
 Los valores de las secciones 4.1 a 4.4 proceden de la ejecución verificada el 19 de
-octubre de 2026 (`results/t05_evaluacion_verificada/`); los de la sección 4.5, de la
-del 1 de noviembre de 2026 (`results/t08_2x2/`), y los de la sección 4.6, de las del
-2 de noviembre de 2026 (`results/pesos_desarrollo/` y `results/t08_2x2_lambda1/`).
+octubre de 2026 (`results/evaluacion_verificada/`); los de la sección 4.5, de la
+del 1 de noviembre de 2026 (`results/experimento_2x2/`), y los de la sección 4.6, de las del
+2 de noviembre de 2026 (`results/pesos_desarrollo/` y `results/experimento_2x2_lambda1/`).
 Esas carpetas están excluidas de Git y
 se regeneran con los comandos anteriores en carpetas nuevas; las figuras de esta sección
 son copias de las suyas, guardadas en `docs/figuras/`. Entorno: Python 3.12.15,
@@ -555,12 +555,12 @@ otros 24 dan el mismo J en las cuatro celdas:
 | 6 de marzo | −89,33 | 0 | +34,35 | +89,33 |
 | 17 de marzo | +80,00 | 0 | 0 | −80,00 |
 
-![Contrastes del experimento 2×2](figuras/t08_contrastes.png)
+![Contrastes del experimento 2×2](figuras/2x2_contrastes.png)
 
 *Figura 5. Efecto del modo ampliado con cada pronóstico e interacción, en J y en CVaR
 diario.*
 
-![ΔJ diario por modo](figuras/t08_diferencias_diarias.png)
+![ΔJ diario por modo](figuras/2x2_diferencias_diarias.png)
 
 *Figura 6. ΔJ diario del modo ampliado con cada pronóstico.*
 
@@ -571,7 +571,7 @@ en 10. Entre el 3 de marzo a las 12:00 y el 5 de marzo a las 18:00, C y D eligie
 de los cuatro contrastes entre pares hay compensación entre J y CVaR diario: C − A,
 D − B y B − A mejoran ambos, y D − C empeora ambos (Figura 7).
 
-![Servicio y riesgo respecto a A](figuras/t08_compensacion.png)
+![Servicio y riesgo respecto a A](figuras/2x2_compensacion.png)
 
 *Figura 7. Diferencia de J y de CVaR diario de cada celda respecto a A.*
 
