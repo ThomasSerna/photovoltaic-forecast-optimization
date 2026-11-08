@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado (19 de octubre de 2026):** **Experimento principal completado** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; borrador del artículo en `docs/articulo.md`). En la rama `experiment/timesfm`, **análisis adicional C con TimesFM 3.0** verificado en CPU (§§5 y 7).
+**Estado (19 de octubre de 2026):** **Experimento principal completado** (datos, pronósticos Chronos-2, simulador, MPC pareado y evaluación final A/B verificados en CPU; artículo del proyecto en `docs/articulo.pdf`). En la rama `experiment/timesfm`, **análisis adicional C con TimesFM 3.0** verificado en CPU (§§5 y 7).
 **Criterio de diseño:** **reducir archivos, capas, historias y código; no simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución

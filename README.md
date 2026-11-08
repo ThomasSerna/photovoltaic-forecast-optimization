@@ -43,7 +43,7 @@ violaciones físicas y cero filtraciones de información futura.
 Son resultados exploratorios: demanda sintética, parámetros físicos supuestos,
 una sola realización meteorológica y sin pruebas de significancia. El detalle
 de los tres métodos está en [el protocolo y sus resultados](docs/IDEA.md);
-el [artículo](docs/articulo.md) desarrolla la comparación beta–Chronos-2.
+el [artículo](docs/articulo.pdf) desarrolla la comparación beta–Chronos-2.
 
 ## Ejecutar el experimento
 
