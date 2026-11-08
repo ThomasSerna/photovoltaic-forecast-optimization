@@ -1,7 +1,7 @@
-"""T04: escenarios empíricos y MPC heurístico común (adaptación de IDEA §§5–6).
+"""Escenarios empíricos y MPC heurístico común (adaptación de IDEA §§5–6).
 
 La reserva genera compromisos; su evaluación y ejecución conservan la física
-de T03. El artículo original no usa este MPC ni su puntuación esperada.
+del simulador. El artículo original no usa este MPC ni su puntuación esperada.
 """
 
 import hashlib
@@ -255,7 +255,7 @@ def _unir_resultados(resultados, decisiones, pronosticos):
 def ejecutar_mpc(caso, pronosticar, *, inicio, fin, estado_inicial=None):
     """Recorre [inicio, fin); callback(historia_admisible, origen_utc, horizonte).
 
-    Devuelve las tablas de T03, decisiones y pronósticos crudos/corregidos con
+    Devuelve las tablas del simulador, decisiones y pronósticos crudos/corregidos con
     rangos y bloques. Solo las observaciones cerradas llegan al callback.
     """
     origen, fin, reloj = _periodo(caso, inicio, fin)
@@ -362,7 +362,7 @@ def calibrar_mpc(caso, pipeline=None):
     """
     config = caso.configuracion
     if parametros_mpc(config)[0] != "original":
-        raise ValueError("calibración: T04 solo calibra el modo original; CVaR corresponde a T07")
+        raise ValueError("calibración: el peso terminal solo se calibra en modo original; para CVaR use --modo cvar")
     inicio, fin, reloj = _periodo(caso, CALIBRACION_INICIO, CALIBRACION_FIN)
     desarrollo = config["periodos"]["desarrollo"]
     if inicio < pd.Timestamp(desarrollo["inicio"]) or fin > pd.Timestamp(desarrollo["fin"]):
@@ -458,7 +458,7 @@ def _validar_riesgo(tabla, elegido):
 
 
 def calibrar_riesgo_mpc(caso, pipeline=None):
-    """T07: selecciona con seis semanas y valida dos, sin tocar entradas ni marzo."""
+    """Calibración del riesgo: selecciona con seis semanas y valida dos, sin tocar entradas ni marzo."""
     config = caso.configuracion
     inicio, fin, reloj = _periodo(caso, RIESGO_INICIO, RIESGO_FIN)
     corte = pd.Timestamp(RIESGO_CORTE).tz_convert("UTC")
@@ -644,7 +644,7 @@ def _publicar_riesgo(caso, salida, entradas_antes, codigo_antes):
     tablas = {n: ensayo[n].astype(object).where(ensayo[n].notna(), None).to_dict("records")
               for n in ("ajuste", "validacion", "seleccion")}
     informe = dict(
-        alcance="T07: calibración y validación temporal en desarrollo; marzo no interviene",
+        alcance="calibración del riesgo y validación temporal en desarrollo; marzo no interviene",
         inicio_utc=ensayo["inicio_utc"].isoformat(), corte_utc=ensayo["corte_utc"].isoformat(),
         fin_utc=ensayo["fin_utc"].isoformat(), alpha_cvar=ALPHA_RIESGO,
         lambda_riesgo=ensayo["lambda_riesgo"], pesos=list(PESOS_RIESGO), duracion_s=perf_counter() - inicio,
@@ -693,11 +693,11 @@ def main():
     parser.add_argument("--modo", choices=("original", "cvar"), default="original")
     args = parser.parse_args()
     if args.salida is None:
-        args.salida = Path("results/t07_calibracion" if args.modo == "cvar" else "results/t04_calibracion")
+        args.salida = Path("results/calibracion_riesgo" if args.modo == "cvar" else "results/calibracion_terminal")
     try:
         caso = cargar_caso(args.config)
         if args.modo == "original" and parametros_mpc(caso.configuracion)[0] != "original":
-            raise ValueError("calibración: T04 solo calibra el modo original; CVaR corresponde a T07")
+            raise ValueError("calibración: el peso terminal solo se calibra en modo original; para CVaR use --modo cvar")
         salida = args.salida.resolve()
         if salida == args.config.resolve() or salida in [p.resolve() for p in caso.rutas.values()]:
             raise ValueError("salida: no puede reemplazar una entrada")
@@ -725,7 +725,7 @@ def main():
                     correcciones=p["correcciones"], inicio_utc=[f.isoformat() for f in p["crudos"].index],
                     crudos=p["crudos"].to_numpy().tolist(), corregidos=p["corregidos"].to_numpy().tolist()))
         informe = dict(
-            alcance="T04: calibración pareada de desarrollo, no evaluación final",
+            alcance="calibración pareada del peso terminal en desarrollo, no evaluación final",
             inicio_utc=ensayo["inicio_utc"].isoformat(), fin_utc=ensayo["fin_utc"].isoformat(),
             lambda_terminal=elegido, pesos=list(PESOS_TERMINALES), duracion_s=duracion,
             criterio="máximo promedio de J realizado de beta y Chronos; empate por menor peso",
@@ -735,7 +735,7 @@ def main():
             uv_lock_sha256=sha256_de(Path(__file__).resolve().parents[1] / "uv.lock"),
             supuestos=["beta2: loc=0, escala=1.05*máximo positivo por hora de las últimas 336 h",
                        "rangos por columna con empates promedio; colas constantes en q0.1 y q0.9",
-                       "reservas solo al generar candidatos; física T03 en evaluación y ejecución",
+                       "reservas solo al generar candidatos; física del simulador en evaluación y ejecución",
                        "MPC heurístico adaptado, sin garantía de optimalidad o calibración conjunta"],
         )
         texto = json.dumps(informe, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
@@ -745,7 +745,7 @@ def main():
         temporal_informe = salida / "resumen.json.tmp"
         ruta_informe = salida / "resumen.json"
         try:
-            with NamedTemporaryFile(dir=args.config.parent, prefix=args.config.name + ".t04.",
+            with NamedTemporaryFile(dir=args.config.parent, prefix=args.config.name + ".calibracion.",
                                     suffix=".tmp", delete=False) as archivo:
                 temporal_config = Path(archivo.name)
             temporal_config.write_text(

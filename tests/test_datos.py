@@ -1,4 +1,4 @@
-"""Casos de aceptación de HU-01, incluidos archivos inconsistentes y fuga temporal."""
+"""Casos de aceptación de la preparación de datos, incluidos archivos inconsistentes y fuga temporal."""
 
 import hashlib
 import json

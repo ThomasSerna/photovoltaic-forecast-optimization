@@ -152,7 +152,7 @@ intervalo correspondiente.
 La evaluación utiliza consumo sintético y no constituye una validación
 independiente con mediciones reales de la escuela.
 
-## Ingesta ejecutable y configuración provisional (HU-01)
+## Ingesta ejecutable y configuración provisional
 
 `uv run energy-project --config scripts/configuracion.json` valida los archivos
 contra su configuración y semilla, sin escribirlos. Comprueba números finitos,

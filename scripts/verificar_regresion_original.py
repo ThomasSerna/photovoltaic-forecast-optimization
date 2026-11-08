@@ -1,4 +1,4 @@
-"""Repite T05 original y lo contrasta con el controlador anterior a T06."""
+"""Repite la evaluación original y la contrasta con el controlador anterior al modo CVaR."""
 
 import argparse
 import hashlib
@@ -29,7 +29,7 @@ def cargar_referencia():
         ["git", "show", f"{REFERENCIA}:src/controlador.py"], cwd=RAIZ,
         check=True, capture_output=True, encoding="utf-8",
     ).stdout
-    modulo = ModuleType("src._controlador_pre_t06")
+    modulo = ModuleType("src._controlador_previo_cvar")
     modulo.__package__ = "src"
     exec(compile(fuente, f"git:{REFERENCIA}/src/controlador.py", "exec"), modulo.__dict__)
     return modulo, hashlib.sha256(fuente.encode("utf-8")).hexdigest()
@@ -88,13 +88,13 @@ def contrastar_publicados(resumen):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=RAIZ / "scripts/configuracion.json")
-    parser.add_argument("--salida", type=Path, default=RAIZ / "results/t07_regresion_original")
+    parser.add_argument("--salida", type=Path, default=RAIZ / "results/regresion_original")
     args = parser.parse_args()
     try:
         caso = cargar_caso(args.config)
         config = caso.configuracion
         if parametros_mpc(config)[0] != "original" or config["lambda_terminal"] != 0:
-            raise ValueError("regresión T05: se requiere modo original y lambda_terminal=0")
+            raise ValueError("regresión de la evaluación original: se requiere modo original y lambda_terminal=0")
         salida = args.salida.resolve()
         if salida in [ruta.resolve() for ruta in caso.rutas.values()]:
             raise ValueError("salida: no puede reemplazar una entrada")
@@ -130,7 +130,7 @@ def main():
         for paquete in ("numpy", "scipy", "chronos-forecasting", "torch", "transformers", "astral", "matplotlib"):
             versiones[paquete] = importlib.metadata.version(paquete)
         informe = dict(
-            alcance="T07: regresión integral de T05 original; marzo no calibra ni evalúa CVaR",
+            alcance="regresión integral de la evaluación original; marzo no calibra ni evalúa CVaR",
             referencia_git=REFERENCIA, fuente_referencia_sha256=fuente_sha256,
             inicio_utc=evaluacion["inicio_utc"].isoformat(), fin_utc=evaluacion["fin_utc"].isoformat(),
             configuracion=config, semillas=dict(demanda=config["semilla"], escenarios=config["semilla_escenarios"]),
@@ -154,7 +154,7 @@ def main():
             temporal.unlink(missing_ok=True)
     except (OSError, ValueError, ImportError, RuntimeError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Error: {error}\nLa salida {args.salida} puede estar incompleta; no es válida.\n")
-    print(f"{salida}: T05 original coincide con {REFERENCIA[:8]} y las cifras publicadas")
+    print(f"{salida}: la evaluación original coincide con {REFERENCIA[:8]} y las cifras publicadas")
 
 
 if __name__ == "__main__":

@@ -96,7 +96,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--salida', type=Path, default=RAIZ/'results/calibracion_servicio')
     args = parser.parse_args()
-    carpeta = RAIZ/'results/t07_calibracion'
+    carpeta = RAIZ/'results/calibracion_riesgo'
     referencia = json.loads((carpeta/'resumen.json').read_text(encoding='utf-8'))
     for nombre, huella in referencia['archivos_sha256'].items():
         if sha256_de(carpeta/nombre) != huella:
@@ -107,7 +107,7 @@ def main():
         if registro['sha256'] != referencia['entradas_sha256'][nombre]['sha256']:
             raise ValueError(f'Entrada distinta: {nombre}')
     guion = sha256_de(Path(__file__))
-    regresion = RAIZ/'results/t07_regresion_original'
+    regresion = RAIZ/'results/regresion_original'
     comparacion = RAIZ/'results/comparacion_mpc_chronos'
     fuentes_marzo = verificar_fuentes_marzo(caso, regresion, comparacion)
     diario = pd.read_csv(carpeta/'diario.csv',float_precision='round_trip')

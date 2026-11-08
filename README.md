@@ -112,7 +112,7 @@ uv run --locked --extra pronosticos python -m src.experimento --config scripts/c
 ```
 
 Para usar el peso calibrado, indique en `--config` el archivo
-`results/t07_calibracion/configuracion_cvar.json` generado por la calibración.
+`results/calibracion_riesgo/configuracion_cvar.json` generado por la calibración.
 Este comando usa el periodo de evaluación de marzo. No use esos resultados para
 elegir o ajustar los parámetros: el peso se seleccionó con datos de desarrollo.
 `candidatos.csv` registra las métricas por calendario único y
@@ -131,7 +131,7 @@ Para repetir la calibración desde la raíz del repositorio, use una carpeta de
 salida nueva; la campaña registrada tardó 44,1 minutos en CPU:
 
 ```powershell
-uv run --locked --extra pronosticos python -m src.controlador --modo cvar --salida results/t07_calibracion
+uv run --locked --extra pronosticos python -m src.controlador --modo cvar --salida results/calibracion_riesgo
 ```
 
 El informe `resumen.json` registra el criterio, los parámetros, las métricas,
@@ -147,12 +147,12 @@ pronosticador de la evaluación frente al controlador previo al modo CVaR. Para
 repetirla:
 
 ```powershell
-uv run --locked --extra pronosticos python -m scripts.verificar_regresion_t07 --salida results/t07_regresion_original
+uv run --locked --extra pronosticos python -m scripts.verificar_regresion_original --salida results/regresion_original
 ```
 
 La regresión requiere el objeto Git `9bc279c7caa2aa81eab10567d48741e93fd10f9f`
 en el historial local. Lee el controlador de esa revisión sin cambiar el
-checkout. El informe generado queda en `results/t07_regresion_original/resumen.json`.
+checkout. El informe generado queda en `results/regresion_original/resumen.json`.
 
 ### Comparar los dos controladores con Chronos-2
 
