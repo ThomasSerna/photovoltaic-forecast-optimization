@@ -28,8 +28,8 @@ desarrollo, consulte:
 - [Protocolo y modelo](docs/IDEA.md): ecuaciones, correspondencia con el artículo,
   adaptaciones y experimentos.
 - [Datos y unidades](docs/datos.md): origen, supuestos y periodos del caso.
-- [Artículo del proyecto](docs/articulo.md): método, resultados y discusión de la
-  comparación con el MPC original.
+- [Artículo del proyecto](docs/articulo.pdf): modelo, MPC ampliado con CVaR,
+  resultados, discusión y análisis adicionales de las ramas.
 
 ## Resultados
 
@@ -52,7 +52,7 @@ uso de información futura. Un pronóstico mejor no garantiza más servicio.
 
 ![Diferencia diaria de servicio ponderado entre Chronos-2 y beta](docs/figuras/diferencias_diarias.png)
 
-El [artículo del proyecto](docs/articulo.md) presenta las tablas, figuras y
+El [artículo del proyecto](docs/articulo.pdf) presenta las tablas, figuras y
 análisis de esta evaluación. Los resultados son exploratorios: usan demanda
 sintética, meteorología de reanálisis y una sola realización; no prueban significancia ni
 beneficios en una instalación real.

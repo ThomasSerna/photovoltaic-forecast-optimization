@@ -1,0 +1,2 @@
+# Los PDF son binarios: sin conversión de finales de línea ni diff de texto
+*.pdf binary
