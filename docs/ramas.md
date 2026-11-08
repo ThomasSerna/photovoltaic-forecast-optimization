@@ -124,7 +124,7 @@ puede descartarse que incluyera series semejantes.
 ```powershell
 git switch experiment/t0gamma
 uv sync --locked --extra pronosticos
-uv run --locked --extra pronosticos python -m src.experimento --salida results/comparacion_cuatro_pronosticos
+uv run --locked --extra pronosticos python -m src.experimento --salida results/comparacion_t0gamma
 ```
 
 ## Chronos-2 ajustado con LoRA
@@ -239,12 +239,12 @@ uv run --locked --extra pronosticos python -m scripts.calibrar_servicio --salida
 ```
 
 [timesfm-rama]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/tree/experiment/timesfm
-[timesfm-doc]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/3007f0ecd57a0ee63d5e12600e3fe43538855cbd/docs/IDEA.md#7-protocolo-experimental-y-resultados
+[timesfm-doc]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/e49d538a50fb894e0ba76f3cf68b4379132e16e1/docs/IDEA.md#7-protocolo-experimental-y-resultados
 [t0gamma-rama]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/tree/experiment/t0gamma
-[t0gamma-readme]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/9aef0dec479b15ab27e395b1818d279ed65b03a7/README.md#resultados
-[t0gamma-doc]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/9aef0dec479b15ab27e395b1818d279ed65b03a7/docs/IDEA.md#7-protocolo-experimental-y-resultados
+[t0gamma-readme]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/2875d21abdd0b4029f4388ad3f7434c1abf47772/README.md#resultados
+[t0gamma-doc]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/2875d21abdd0b4029f4388ad3f7434c1abf47772/docs/IDEA.md#7-protocolo-experimental-y-resultados
 [lora-rama]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/tree/experiment/chronos-2-fine-tunning-lora
-[lora-doc]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/026d82150d73210c542e11cddaec425fa18877e0/docs/chronos_lora.md#5-resultados-verificados-25-de-octubre-de-2026
+[lora-doc]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/4f3dc4636326416b2718260e4a3ef46b677e46fd/docs/chronos_lora.md#5-resultados-verificados-25-de-octubre-de-2026
 [beta-rama]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/tree/experimental/beta-comparation
-[beta-doc-mpc]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/894906c993a7e35b7b259cd3c725335e817498a0/docs/IDEA.md#comparación-de-beta-sin-mpc-frente-a-chronos-con-mpc
-[beta-doc-cal]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/894906c993a7e35b7b259cd3c725335e817498a0/docs/IDEA.md#calibración-experimental-orientada-al-servicio
+[beta-doc-mpc]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/2ac816a65da687962cc8989f5252ea8e5754b5ef/docs/IDEA.md#comparación-de-beta-sin-mpc-frente-a-chronos-con-mpc
+[beta-doc-cal]: https://github.com/ThomasSerna/photovoltaic-forecast-optimization/blob/2ac816a65da687962cc8989f5252ea8e5754b5ef/docs/IDEA.md#calibración-experimental-orientada-al-servicio
