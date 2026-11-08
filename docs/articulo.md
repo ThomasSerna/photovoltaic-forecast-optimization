@@ -1,6 +1,6 @@
 # Pronósticos de Chronos-2 frente a una referencia beta en la planificación de un sistema fotovoltaico aislado
 
-**Borrador del artículo del curso Optimización 1 (T05).**
+**Borrador del artículo del curso Optimización 1.**
 Caso semisintético contextualizado en el Centro Educativo Rural El Rayo, Támesis
 (Antioquia). Integrantes: Thomas Serna, Juan Esteban Palacio y Jeronimo Gutierrez.
 
@@ -277,8 +277,8 @@ es una adaptación del proyecto: el artículo selecciona la solución determinis
 frecuente entre réplicas y menciona el control predictivo como extensión (§§3.1 y 6).
 
 **Referencia reactiva.** Para interpretar los resultados se añade la heurística de
-T03 ejecutada hora a hora con la irradiancia realizada, sin compromisos. Equivale a
-conocer de antemano la energía FV de la hora en curso, de modo que es una referencia
+selección y despacho ejecutada hora a hora con la irradiancia realizada, sin
+compromisos. Equivale a conocer de antemano la energía FV de la hora en curso, de modo que es una referencia
 con información perfecta de la hora y no una alternativa admisible. No interviene en
 la diferencia principal B − A.
 
