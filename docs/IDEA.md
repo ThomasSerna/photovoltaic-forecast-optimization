@@ -4,7 +4,7 @@
 
 **Caso de estudio:** sistema fotovoltaico aislado *hipotético*, contextualizado en el Centro Educativo Rural El Rayo, Támesis (Antioquia).  
 **Naturaleza:** experimento computacional semisintético; no instalación, control real ni diagnóstico energético verificado de la institución.  
-**Estado:** la simulación, los pronósticos y los dos modos de MPC están implementados y se han evaluado en CPU. El modo original se evaluó en marzo; el modo CVaR se calibró con datos de desarrollo. Un experimento exploratorio 2×2 compara pronósticos y controladores, con una sensibilidad posterior al peso de riesgo; el borrador `docs/articulo.md` presenta sus resultados y los de la evaluación original.
+**Estado:** la simulación, los pronósticos y los dos modos de MPC están implementados y se han evaluado en CPU. El modo original se evaluó en marzo; el modo CVaR se calibró con datos de desarrollo. Un experimento exploratorio 2×2 compara pronósticos y controladores, con una sensibilidad posterior al peso de riesgo; el [artículo del proyecto](articulo.pdf) presenta sus resultados, los de la evaluación original y los análisis adicionales de las ramas.
 **Criterio de diseño:** **mantener una implementación sencilla sin simplificar las matemáticas ni relajar restricciones físicas.**
 
 ## 1. Pregunta, objetivo y contribución

@@ -3,8 +3,9 @@
 Además de la evaluación principal de `main`, el equipo probó cuatro extensiones en
 ramas separadas del repositorio. Usan el mismo caso semisintético de Támesis, la misma
 demanda, el mismo sistema físico y el mismo periodo de evaluación (3 al 30 de marzo de
-2025, 672 horas y 112 orígenes por método). No se fusionaron en `main` y no cambian los
-resultados del [README](../README.md) ni del [artículo](articulo.md).
+2025, 672 horas y 112 orígenes por método). No se fusionaron en `main`: el
+[artículo](articulo.pdf) los presenta como análisis adicionales y no cambian sus
+resultados principales ni los del [README](../README.md).
 
 Todos son análisis **exploratorios**: una sola realización meteorológica, demanda
 sintética, marzo ya inspeccionado en la evaluación principal y ninguna prueba de
