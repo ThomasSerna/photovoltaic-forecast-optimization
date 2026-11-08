@@ -43,7 +43,7 @@ ligeramente por debajo de beta en J. Los ensayos registraron cero violaciones
 físicas y cero usos de información futura en la ejecución del experimento.
 
 Son resultados exploratorios de 28 días, una realización meteorológica y demanda
-sintética; no se aplicaron pruebas de significancia. El [artículo](docs/articulo.md)
+sintética; no se aplicaron pruebas de significancia. El [artículo](docs/articulo.pdf)
 y sus [figuras](docs/figuras/) desarrollan la comparación inicial beta–Chronos-2.
 
 ## Ejecutar el experimento
