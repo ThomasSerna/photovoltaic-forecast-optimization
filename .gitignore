@@ -40,3 +40,8 @@ graphify-out/
 .codex/skills/graphify/
 .kiro/skills/graphify/
 .kiro/steering/graphify.md
+
+# Configuración local de herramientas de desarrollo (no se versiona)
+AGENTS.md
+CLAUDE.md
+.claude/
