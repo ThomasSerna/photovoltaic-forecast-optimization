@@ -30,3 +30,8 @@ dist/
 # Informes regenerables y nuevas adquisiciones (el snapshot de data/ se conserva)
 results/
 data/adquisiciones/
+
+# Configuración local de herramientas de desarrollo (no se versiona)
+AGENTS.md
+CLAUDE.md
+.claude/
